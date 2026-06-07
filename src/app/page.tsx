@@ -47,6 +47,8 @@ import {
   FolderOpen,
   Edit2,
   Info,
+  AlertTriangle,
+  CheckCircle,
   Eye,
   Link as LinkIcon,
   ChevronDown,
@@ -121,6 +123,7 @@ export default function DrivePage() {
 
   // Toast / Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<"info" | "success" | "error">("info");
 
   // Mobile Sidebar & Collapsibility State
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -275,8 +278,9 @@ export default function DrivePage() {
     };
   }, [docsModalOpen, docsEditorMode]);
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, type: "info" | "success" | "error" = "info") => {
     setToastMessage(msg);
+    setToastType(type);
   };
 
   // Context Menu Trigger
@@ -300,9 +304,9 @@ export default function DrivePage() {
         : await getDownloadUrl(asset.id);
 
       await navigator.clipboard.writeText(downloadUrl);
-      showToast("Download URL copied to clipboard!");
+      showToast("Download URL copied to clipboard!", "success");
     } catch (err) {
-      alert("Failed to generate download URL");
+      showToast("Failed to generate download URL", "error");
     }
   };
 
@@ -368,7 +372,7 @@ export default function DrivePage() {
           const newKey = parts.join("/");
 
           await renameSharedAsset(item.id, newKey);
-          showToast(`File renamed to ${nameInput}`);
+          showToast(`File renamed to ${nameInput}`, "success");
         } else {
           // Folder: renameTarget item.id is prefix e.g. "Wedding/" or "test/sub/"
           const oldPrefix = item.id;
@@ -379,7 +383,7 @@ export default function DrivePage() {
           const newPrefix = parts.join("/") + "/";
 
           await renameSharedFolder(oldPrefix, newPrefix);
-          showToast(`Folder renamed to ${nameInput}`);
+          showToast(`Folder renamed to ${nameInput}`, "success");
         }
 
         // Reload shared contents
@@ -391,10 +395,10 @@ export default function DrivePage() {
         // Personal Drive (Database Rename)
         if (type === "file") {
           await renameAsset(item.id, nameInput);
-          showToast(`File renamed to ${nameInput}`);
+          showToast(`File renamed to ${nameInput}`, "success");
         } else {
           await renameFolder(item.id, nameInput);
-          showToast(`Folder renamed to ${nameInput}`);
+          showToast(`Folder renamed to ${nameInput}`, "success");
         }
 
         // Reload personal contents
@@ -406,7 +410,7 @@ export default function DrivePage() {
         setAssets(loadedAssets);
       }
     } catch (err) {
-      alert("Failed to rename target");
+      showToast("Failed to rename target", "error");
       console.error(err);
     } finally {
       setRenameModalOpen(false);
@@ -510,8 +514,9 @@ export default function DrivePage() {
         });
         setFolders(loadedFolders);
       }
+      showToast("Folder created successfully!", "success");
     } catch (err) {
-      alert("Failed to create folder");
+      showToast("Failed to create folder", "error");
     }
   };
 
@@ -528,8 +533,9 @@ export default function DrivePage() {
       // Reload projects list
       const loadedProjects = await listProjects();
       setProjects(loadedProjects);
+      showToast("Project created successfully!", "success");
     } catch (err) {
-      alert("Failed to create project");
+      showToast("Failed to create project", "error");
     }
   };
 
@@ -547,8 +553,9 @@ export default function DrivePage() {
       // Reload projects list
       const loadedProjects = await listProjects();
       setProjects(loadedProjects);
+      showToast("Project renamed successfully!", "success");
     } catch (err) {
-      alert("Failed to rename project");
+      showToast("Failed to rename project", "error");
     }
   };
 
@@ -568,8 +575,9 @@ export default function DrivePage() {
       // Reload projects list
       const loadedProjects = await listProjects();
       setProjects(loadedProjects);
+      showToast("Project deleted successfully!", "success");
     } catch (err) {
-      alert("Failed to delete project");
+      showToast("Failed to delete project", "error");
     }
   };
 
@@ -644,7 +652,7 @@ export default function DrivePage() {
       a.click();
       document.body.removeChild(a);
     } catch (err) {
-      alert("Failed to download file");
+      showToast("Failed to download file", "error");
     }
   };
 
@@ -675,10 +683,9 @@ export default function DrivePage() {
             });
             setAssets(loadedAssets);
           }
-          setToastMessage("File deleted successfully!");
-          setTimeout(() => setToastMessage(null), 3000);
+          showToast("File deleted successfully!", "success");
         } catch (err) {
-          alert("Failed to delete file");
+          showToast("Failed to delete file", "error");
         }
       }
     });
@@ -711,10 +718,9 @@ export default function DrivePage() {
             setFolders(loadedFolders);
             setAssets(loadedAssets);
           }
-          setToastMessage("Folder deleted successfully!");
-          setTimeout(() => setToastMessage(null), 3000);
+          showToast("Folder deleted successfully!", "success");
         } catch (err) {
-          alert("Failed to delete folder");
+          showToast("Failed to delete folder", "error");
         }
       }
     });
@@ -817,11 +823,10 @@ export default function DrivePage() {
 
           handleClearSelection();
           await refreshExplorerContents();
-          setToastMessage("Selected items deleted successfully!");
-          setTimeout(() => setToastMessage(null), 3000);
+          showToast("Selected items deleted successfully!", "success");
         } catch (err) {
           console.error("Bulk delete failed", err);
-          alert("Failed to delete selected items");
+          showToast("Failed to delete selected items", "error");
         } finally {
           setLoading(false);
         }
@@ -981,7 +986,7 @@ export default function DrivePage() {
           sourceIsSharedDrive,
           targetIsSharedDrive
         });
-        setToastMessage("Items moved successfully!");
+        showToast("Items moved successfully!", "success");
       } else if (pickerAction === "copy") {
         await bulkCopyItems({
           assetIds: Array.from(selectedAssetIds),
@@ -991,15 +996,14 @@ export default function DrivePage() {
           sourceIsSharedDrive,
           targetIsSharedDrive
         });
-        setToastMessage("Items copied successfully!");
+        showToast("Items copied successfully!", "success");
       }
 
       handleClearSelection();
       await refreshExplorerContents();
-      setTimeout(() => setToastMessage(null), 3000);
     } catch (err) {
       console.error(`Bulk ${pickerAction} failed`, err);
-      alert(`Failed to ${pickerAction} selected items`);
+      showToast(`Failed to ${pickerAction} selected items`, "error");
     } finally {
       setLoading(false);
       setPickerAction(null);
@@ -1114,7 +1118,7 @@ export default function DrivePage() {
 
     } catch (err) {
       console.error("Multipart upload failed for " + filename, err);
-      alert(`Failed to upload ${filename}`);
+      showToast(`Failed to upload ${filename}`, "error");
       throw err;
     }
   };
@@ -1277,8 +1281,9 @@ export default function DrivePage() {
       }
 
       await refreshExplorerContents();
+      showToast("Text file saved successfully!", "success");
     } catch (err) {
-      alert("Failed to save text file");
+      showToast("Failed to save text file", "error");
     }
   };
 
@@ -1371,8 +1376,9 @@ export default function DrivePage() {
       }
 
       await refreshExplorerContents();
+      showToast("Document saved successfully!", "success");
     } catch (err) {
-      alert("Failed to save Document");
+      showToast("Failed to save Document", "error");
     }
   };
 
@@ -1447,8 +1453,9 @@ export default function DrivePage() {
       }
 
       await refreshExplorerContents();
+      showToast("Sheet saved successfully!", "success");
     } catch (err) {
-      alert("Failed to save Sheet");
+      showToast("Failed to save Sheet", "error");
     }
   };
 
@@ -2893,8 +2900,10 @@ export default function DrivePage() {
 
       {/* TOAST OVERLAY */}
       {toastMessage && (
-        <div className="toast animate-fade-in-up">
-          <Info size={16} />
+        <div className={`toast toast-${toastType} animate-fade-in-up`}>
+          {toastType === "success" && <CheckCircle size={16} />}
+          {toastType === "error" && <AlertTriangle size={16} />}
+          {toastType === "info" && <Info size={16} />}
           <span>{toastMessage}</span>
         </div>
       )}

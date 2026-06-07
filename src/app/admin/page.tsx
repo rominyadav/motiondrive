@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { inviteUser, listUsers, listInvitations, updateUserStatus } from "@/app/actions/admin";
-import { Users, Mail, ShieldAlert, ArrowLeft, LogOut } from "lucide-react";
+import { Users, Mail, ShieldAlert, ArrowLeft, LogOut, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import Link from "next/link";
 import "../drive.css";
 
@@ -18,6 +18,23 @@ export default function AdminPage() {
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const router = useRouter();
+
+  // Toast / Notification State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<"info" | "success" | "error">("info");
+
+  // Toast message auto-dismiss
+  useEffect(() => {
+    if (toastMessage) {
+      const t = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toastMessage]);
+
+  const showToast = (msg: string, type: "info" | "success" | "error" = "info") => {
+    setToastMessage(msg);
+    setToastType(type);
+  };
 
   useEffect(() => {
     async function loadAdminData() {
@@ -81,8 +98,9 @@ export default function AdminPage() {
       // Reload users list
       const updated = await listUsers();
       setUsers(updated);
+      showToast(`User status updated to ${newStatus}!`, "success");
     } catch (err) {
-      alert("Failed to update user status");
+      showToast("Failed to update user status", "error");
     }
   };
 
@@ -271,6 +289,16 @@ export default function AdminPage() {
           </div>
         </div>
       </main>
+
+      {/* TOAST OVERLAY */}
+      {toastMessage && (
+        <div className={`toast toast-${toastType} animate-fade-in-up`}>
+          {toastType === "success" && <CheckCircle size={16} />}
+          {toastType === "error" && <AlertTriangle size={16} />}
+          {toastType === "info" && <Info size={16} />}
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </div>
   );
 }
