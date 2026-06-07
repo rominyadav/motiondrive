@@ -11,7 +11,8 @@ import {
   GetObjectCommand, 
   DeleteObjectCommand,
   ListObjectsV2Command,
-  PutObjectCommand
+  PutObjectCommand,
+  CopyObjectCommand
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { eq, and, isNull, desc, inArray } from "drizzle-orm";
@@ -468,4 +469,82 @@ export async function getSharedDownloadUrl(key: string) {
 
   const downloadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
   return { downloadUrl, filename };
+}
+
+// ==========================================
+// FILE AND FOLDER RENAMING ACTIONS
+// ==========================================
+
+export async function renameAsset(assetId: string, newFilename: string) {
+  await requireApprovedUser();
+  await db
+    .update(assets)
+    .set({ filename: newFilename })
+    .where(eq(assets.id, assetId));
+  return { success: true };
+}
+
+export async function renameFolder(folderId: string, newName: string) {
+  await requireApprovedUser();
+  await db
+    .update(folders)
+    .set({ name: newName })
+    .where(eq(folders.id, folderId));
+  return { success: true };
+}
+
+export async function renameSharedAsset(oldKey: string, newKey: string) {
+  await requireApprovedUser();
+
+  const copyCommand = new CopyObjectCommand({
+    Bucket: R2_SHARED_BUCKET_NAME,
+    CopySource: `${R2_SHARED_BUCKET_NAME}/${encodeURIComponent(oldKey)}`,
+    Key: newKey,
+  });
+  await r2Client.send(copyCommand);
+
+  const deleteCommand = new DeleteObjectCommand({
+    Bucket: R2_SHARED_BUCKET_NAME,
+    Key: oldKey,
+  });
+  await r2Client.send(deleteCommand);
+
+  return { success: true };
+}
+
+export async function renameSharedFolder(oldPrefix: string, newPrefix: string) {
+  await requireApprovedUser();
+
+  // List all objects under the old folder prefix recursively
+  const listCommand = new ListObjectsV2Command({
+    Bucket: R2_SHARED_BUCKET_NAME,
+    Prefix: oldPrefix,
+  });
+
+  const response = await r2Client.send(listCommand);
+  const objects = response.Contents || [];
+
+  for (const obj of objects) {
+    if (obj.Key) {
+      const relativePart = obj.Key.substring(oldPrefix.length);
+      const targetKey = `${newPrefix}${relativePart}`;
+
+      // Copy to new key
+      const copyCommand = new CopyObjectCommand({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        CopySource: `${R2_SHARED_BUCKET_NAME}/${encodeURIComponent(obj.Key)}`,
+        Key: targetKey,
+      });
+      await r2Client.send(copyCommand);
+
+      // Delete old key
+      const deleteCommand = new DeleteObjectCommand({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        Key: obj.Key,
+      });
+      await r2Client.send(deleteCommand);
+    }
+  }
+
+  return { success: true };
 }

@@ -18,7 +18,11 @@ import {
   createSharedFolder,
   deleteSharedAsset,
   deleteSharedFolder,
-  getSharedDownloadUrl
+  getSharedDownloadUrl,
+  renameAsset,
+  renameFolder,
+  renameSharedAsset,
+  renameSharedFolder
 } from "@/app/actions/drive";
 import { 
   Folder, 
@@ -34,7 +38,12 @@ import {
   LogOut, 
   Sliders, 
   Loader2,
-  Share2
+  Share2,
+  FolderOpen,
+  Edit2,
+  Info,
+  Eye,
+  Link as LinkIcon
 } from "lucide-react";
 import Link from "next/link";
 import "./drive.css";
@@ -69,8 +78,200 @@ export default function DrivePage() {
   const [uploadProgress, setUploadProgress] = useState<{ [filename: string]: number }>({});
   const [uploadActive, setUploadActive] = useState(false);
 
+  // Right-Click Context Menu State
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    item: any;
+    type: "file" | "folder";
+  } | null>(null);
+
+  // Rename Dialog State
+  const [renameModalOpen, setRenameModalOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<{ item: any; type: "file" | "folder" } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  // Get Info Modal State
+  const [infoModalOpen, setInfoModalOpen] = useState(false);
+  const [infoTarget, setInfoTarget] = useState<{ item: any; type: "file" | "folder" } | null>(null);
+
+  // File Preview Modal State
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewTarget, setPreviewTarget] = useState<any | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewTextContent, setPreviewTextContent] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Toast / Notification State
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // Auto-close context menu on window clicks
+  useEffect(() => {
+    const handleCloseMenu = () => setContextMenu(null);
+    window.addEventListener("click", handleCloseMenu);
+    window.addEventListener("contextmenu", handleCloseMenu);
+    return () => {
+      window.removeEventListener("click", handleCloseMenu);
+      window.removeEventListener("contextmenu", handleCloseMenu);
+    };
+  }, []);
+
+  // Toast message auto-dismiss
+  useEffect(() => {
+    if (toastMessage) {
+      const t = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [toastMessage]);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+  };
+
+  // Context Menu Trigger
+  const handleContextMenu = (e: React.MouseEvent, item: any, type: "file" | "folder") => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      visible: true,
+      x: e.pageX,
+      y: e.pageY,
+      item,
+      type
+    });
+  };
+
+  // Copy Direct Link to Clipboard
+  const handleCopyLink = async (asset: any) => {
+    try {
+      const { downloadUrl } = explorerMode === "shared"
+        ? await getSharedDownloadUrl(asset.id)
+        : await getDownloadUrl(asset.id);
+
+      await navigator.clipboard.writeText(downloadUrl);
+      showToast("Download URL copied to clipboard!");
+    } catch (err) {
+      alert("Failed to generate download URL");
+    }
+  };
+
+  // Open Preview Modal
+  const handleOpenPreview = async (asset: any) => {
+    setPreviewTarget(asset);
+    setPreviewLoading(true);
+    setPreviewModalOpen(true);
+    setPreviewTextContent("");
+    setPreviewUrl("");
+
+    try {
+      const { downloadUrl } = explorerMode === "shared"
+        ? await getSharedDownloadUrl(asset.id)
+        : await getDownloadUrl(asset.id);
+
+      setPreviewUrl(downloadUrl);
+
+      // Check if it's a text file to load contents
+      const ext = asset.filename.split(".").pop()?.toLowerCase() || "";
+      const isText = ["txt", "md", "json", "js", "ts", "css", "html", "csv", "xml", "yaml", "yml"].includes(ext);
+
+      if (isText) {
+        const response = await fetch(downloadUrl);
+        if (response.ok) {
+          const text = await response.text();
+          setPreviewTextContent(text);
+        } else {
+          setPreviewTextContent("Failed to load text preview content.");
+        }
+      }
+    } catch (err) {
+      console.error("Preview failed", err);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  // Initialize Rename Modal
+  const handleOpenRename = (item: any, type: "file" | "folder") => {
+    setRenameTarget({ item, type });
+    const initialName = type === "file" 
+      ? item.filename 
+      : item.name;
+    setRenameValue(initialName);
+    setRenameModalOpen(true);
+  };
+
+  // Rename Submission Handler
+  const handleRenameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!renameTarget || !renameValue.trim()) return;
+
+    const { item, type } = renameTarget;
+    const nameInput = renameValue.trim();
+
+    try {
+      if (explorerMode === "shared") {
+        if (type === "file") {
+          // Calculate new physical R2 key
+          const parts = item.id.split("/");
+          parts[parts.length - 1] = nameInput;
+          const newKey = parts.join("/");
+
+          await renameSharedAsset(item.id, newKey);
+          showToast(`File renamed to ${nameInput}`);
+        } else {
+          // Folder: renameTarget item.id is prefix e.g. "Wedding/" or "test/sub/"
+          const oldPrefix = item.id;
+          
+          // To compute the new prefix, find the parent path
+          const parts = oldPrefix.split("/").filter(Boolean);
+          parts[parts.length - 1] = nameInput;
+          const newPrefix = parts.join("/") + "/";
+
+          await renameSharedFolder(oldPrefix, newPrefix);
+          showToast(`Folder renamed to ${nameInput}`);
+        }
+
+        // Reload shared contents
+        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+        const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
+        setFolders(loadedFolders);
+        setAssets(loadedAssets);
+      } else {
+        // Personal Drive (Database Rename)
+        if (type === "file") {
+          await renameAsset(item.id, nameInput);
+          showToast(`File renamed to ${nameInput}`);
+        } else {
+          await renameFolder(item.id, nameInput);
+          showToast(`Folder renamed to ${nameInput}`);
+        }
+
+        // Reload personal contents
+        const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
+          projectId: selectedProjectId,
+          folderId: currentFolderId
+        });
+        setFolders(loadedFolders);
+        setAssets(loadedAssets);
+      }
+    } catch (err) {
+      alert("Failed to rename target");
+      console.error(err);
+    } finally {
+      setRenameModalOpen(false);
+      setRenameTarget(null);
+    }
+  };
+
+  // Open Get Info
+  const handleOpenInfo = (item: any, type: "file" | "folder") => {
+    setInfoTarget({ item, type });
+    setInfoModalOpen(true);
+  };
 
   // Load user session and gatekeep access
   useEffect(() => {
@@ -605,6 +806,7 @@ export default function DrivePage() {
                     className="folder-card"
                     onDoubleClick={() => navigateToFolder(folder)}
                     onClick={() => navigateToFolder(folder)}
+                    onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
                   >
                     <Folder className="folder-icon" size={24} />
                     <span className="folder-name">{folder.name}</span>
@@ -644,7 +846,11 @@ export default function DrivePage() {
               </div>
 
               {filteredAssets.map((asset) => (
-                <div key={asset.id} className="file-row">
+                <div 
+                  key={asset.id} 
+                  className="file-row"
+                  onContextMenu={(e) => handleContextMenu(e, asset, "file")}
+                >
                   <div className="file-info">
                     <File className="file-icon" size={18} />
                     <span className="file-name" title={asset.filename}>{asset.filename}</span>
@@ -773,6 +979,322 @@ export default function DrivePage() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* CUSTOM CONTEXT MENU */}
+      {contextMenu && contextMenu.visible && (
+        <div 
+          className="custom-context-menu animate-scale-up" 
+          style={{ top: contextMenu.y, left: contextMenu.x, position: "fixed" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {contextMenu.type === "folder" ? (
+            <>
+              <button 
+                onClick={() => {
+                  navigateToFolder(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <FolderOpen size={16} />
+                <span>Open Folder</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleOpenRename(contextMenu.item, "folder");
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <Edit2 size={16} />
+                <span>Rename</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleOpenInfo(contextMenu.item, "folder");
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <Info size={16} />
+                <span>Get Info</span>
+              </button>
+              {isAdmin && (
+                <button 
+                  onClick={() => {
+                    handleDeleteFolder(contextMenu.item.id, contextMenu.item.name);
+                    setContextMenu(null);
+                  }}
+                  className="context-menu-item delete"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete Folder</span>
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button 
+                onClick={() => {
+                  handleOpenPreview(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <Eye size={16} />
+                <span>Preview File</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleDownloadFile(contextMenu.item.id);
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <Download size={16} />
+                <span>Download</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleCopyLink(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <LinkIcon size={16} />
+                <span>Copy Link</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleOpenRename(contextMenu.item, "file");
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <Edit2 size={16} />
+                <span>Rename</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleOpenInfo(contextMenu.item, "file");
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <Info size={16} />
+                <span>Get Info</span>
+              </button>
+              {isAdmin && (
+                <button 
+                  onClick={() => {
+                    handleDeleteFile(contextMenu.item.id);
+                    setContextMenu(null);
+                  }}
+                  className="context-menu-item delete"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete File</span>
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* RENAME POPUP MODAL */}
+      {renameModalOpen && renameTarget && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
+              Rename {renameTarget.type === "file" ? "File" : "Folder"}
+            </h3>
+            <form onSubmit={handleRenameSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">New Name</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setRenameModalOpen(false);
+                    setRenameTarget(null);
+                  }} 
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* GET INFO POPUP MODAL */}
+      {infoModalOpen && infoTarget && (
+        <div className="modal-overlay" onClick={() => { setInfoModalOpen(false); setInfoTarget(null); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "460px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px" }}>
+              {infoTarget.type === "folder" ? (
+                <Folder className="folder-icon" size={28} />
+              ) : (
+                <File className="file-icon" size={28} />
+              )}
+              <h3 style={{ fontSize: "18px", fontWeight: "700", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {infoTarget.type === "folder" ? infoTarget.item.name : infoTarget.item.filename}
+              </h3>
+            </div>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "14px", marginTop: "8px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}>
+                <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>Type:</span>
+                <span style={{ color: "var(--text-primary)" }}>
+                  {infoTarget.type === "folder" ? "Folder / Directory" : infoTarget.item.mimeType || "Unknown Binary File"}
+                </span>
+              </div>
+
+              {infoTarget.type === "file" && (
+                <div style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}>
+                  <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>Size:</span>
+                  <span style={{ color: "var(--text-primary)" }}>{formatBytes(infoTarget.item.size)}</span>
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}>
+                <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>Storage Bucket:</span>
+                <span style={{ color: "var(--text-primary)" }}>
+                  {explorerMode === "shared" ? "video-assets (NAS Direct)" : "motionsewa-drive (Personal)"}
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}>
+                <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>Physical Path:</span>
+                <span style={{ color: "var(--text-primary)", fontFamily: "monospace", fontSize: "11px", wordBreak: "break-all" }}>
+                  {infoTarget.item.id}
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}>
+                <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>Uploaded At:</span>
+                <span style={{ color: "var(--text-primary)" }}>
+                  {infoTarget.item.uploadedAt ? new Date(infoTarget.item.uploadedAt).toLocaleString() : "Unknown Date"}
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}>
+                <span style={{ color: "var(--text-secondary)", fontWeight: "500" }}>Uploaded By:</span>
+                <span style={{ color: "var(--text-primary)" }}>
+                  {infoTarget.item.uploadedBy || "Creator"}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "16px" }}>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setInfoModalOpen(false);
+                  setInfoTarget(null);
+                }} 
+                className="btn-primary"
+                style={{ height: "36px", padding: "0 20px" }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FILE PREVIEW MODAL */}
+      {previewModalOpen && previewTarget && (
+        <div className="modal-overlay" onClick={() => { setPreviewModalOpen(false); setPreviewTarget(null); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "80vw", width: "800px", background: "var(--bg-secondary)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <File className="file-icon" size={22} />
+                <h3 style={{ fontSize: "16px", fontWeight: "700", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "450px" }}>
+                  Preview: {previewTarget.filename}
+                </h3>
+              </div>
+              <button 
+                onClick={() => { setPreviewModalOpen(false); setPreviewTarget(null); }}
+                className="btn-icon"
+                title="Close Preview"
+              >
+                <ChevronRight size={20} style={{ transform: "rotate(90deg)" }} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "200px", maxHeight: "70vh", overflow: "hidden" }}>
+              {previewLoading ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+                  <Loader2 className="animate-spin brand-accent" size={32} />
+                  <span>Loading Preview...</span>
+                </div>
+              ) : (
+                <>
+                  {["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(previewTarget.filename.split(".").pop()?.toLowerCase() || "") ? (
+                    <img 
+                      src={previewUrl} 
+                      alt={previewTarget.filename} 
+                      style={{ maxWidth: "100%", maxHeight: "65vh", objectFit: "contain", borderRadius: "8px" }} 
+                    />
+                  ) : ["mp4", "mkv", "mov", "avi", "webm", "ogg"].includes(previewTarget.filename.split(".").pop()?.toLowerCase() || "") ? (
+                    <video 
+                      src={previewUrl} 
+                      controls 
+                      autoPlay 
+                      style={{ maxWidth: "100%", maxHeight: "65vh", borderRadius: "8px" }} 
+                    />
+                  ) : ["txt", "md", "json", "js", "ts", "css", "html", "csv", "xml", "yaml", "yml"].includes(previewTarget.filename.split(".").pop()?.toLowerCase() || "") ? (
+                    <pre style={{ width: "100%", maxHeight: "65vh", overflow: "auto", padding: "16px", backgroundColor: "var(--bg-primary)", borderRadius: "8px", fontSize: "13px", fontFamily: "monospace", textAlign: "left", whiteSpace: "pre-wrap", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}>
+                      {previewTextContent}
+                    </pre>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "32px 16px" }}>
+                      <File size={64} style={{ color: "var(--text-muted)" }} />
+                      <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+                        No direct preview available for this file type ({previewTarget.mimeType}).
+                      </p>
+                      <button 
+                        onClick={() => {
+                          handleDownloadFile(previewTarget.id);
+                          setPreviewModalOpen(false);
+                          setPreviewTarget(null);
+                        }}
+                        className="btn-primary"
+                        style={{ display: "flex", alignItems: "center", gap: "8px", height: "38px" }}
+                      >
+                        <Download size={16} />
+                        <span>Download File</span>
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST OVERLAY */}
+      {toastMessage && (
+        <div className="toast animate-fade-in-up">
+          <Info size={16} />
+          <span>{toastMessage}</span>
         </div>
       )}
     </div>
