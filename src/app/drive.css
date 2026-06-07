@@ -797,3 +797,154 @@
     opacity: 1;
   }
 }
+
+/* ==========================================
+   "+ NEW" DROPDOWN MENU
+   ========================================== */
+.new-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 220px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg), var(--shadow-glow);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 50;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background-color: var(--bg-tertiary);
+  transform: translateX(2px);
+}
+
+.dropdown-item svg {
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.dropdown-item:hover svg {
+  color: var(--accent-indigo);
+}
+
+.dropdown-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 6px 0;
+}
+
+/* ==========================================
+   QUILL DOCS RICH-TEXT EDITOR OVERRIDES
+   ========================================== */
+.quill-editor-wrapper {
+  border: 1px solid var(--border-color);
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+/* Modernize Quill Toolbar */
+.quill-editor-wrapper .ql-toolbar.ql-snow {
+  border: none !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+  background-color: #f9fafb !important;
+  padding: 10px 14px !important;
+  border-top-left-radius: 8px !important;
+  border-top-right-radius: 8px !important;
+}
+
+.quill-editor-wrapper .ql-container.ql-snow {
+  border: none !important;
+  font-family: inherit !important;
+  font-size: 15px !important;
+}
+
+.quill-editor-wrapper .ql-editor {
+  padding: 24px 32px !important;
+  min-height: 350px;
+}
+
+/* Scrollbar styling inside editor */
+.quill-editor-wrapper .ql-editor::-webkit-scrollbar {
+  width: 6px;
+}
+.quill-editor-wrapper .ql-editor::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 9999px;
+}
+.quill-editor-wrapper .ql-editor::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ==========================================
+   SPREADSHEET TABLE GRID STYLE
+   ========================================== */
+.sheet-grid-wrapper {
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  scrollbar-gutter: stable;
+}
+
+.spreadsheet-table {
+  border-collapse: collapse;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  table-layout: fixed;
+}
+
+/* Header style resembling Google Sheets */
+.spreadsheet-table th {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  user-select: none;
+  transition: background-color var(--transition-fast);
+}
+
+.spreadsheet-table tr:hover th {
+  background-color: var(--bg-tertiary);
+}
+
+/* Grid layout with perfect borders */
+.spreadsheet-table th, 
+.spreadsheet-table td {
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Elegant cell input styling */
+.spreadsheet-table td input {
+  transition: background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.spreadsheet-table td input:focus {
+  background-color: var(--bg-tertiary) !important;
+  box-shadow: inset 0 0 0 2px var(--accent-indigo);
+}
+
+.spreadsheet-table td input::placeholder {
+  color: var(--text-muted);
+}

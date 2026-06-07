@@ -120,6 +120,8 @@ export async function initiateMultipartUpload(params: {
   projectId?: string | null;
   isSharedDrive?: boolean;
   prefix?: string | null;
+  existingR2Key?: string | null;
+  existingAssetId?: string | null;
 }) {
   const session = await requireApprovedUser();
   const userId = session.user.id;
@@ -128,9 +130,9 @@ export async function initiateMultipartUpload(params: {
   
   // Decide Bucket & Key structure
   const bucketName = params.isSharedDrive ? R2_SHARED_BUCKET_NAME : R2_BUCKET_NAME;
-  const r2Key = params.isSharedDrive 
+  const r2Key = params.existingR2Key || (params.isSharedDrive 
     ? `${params.prefix || ""}${sanitizedFilename}`
-    : `video-archive/${crypto.randomUUID()}-${sanitizedFilename}`;
+    : `video-archive/${crypto.randomUUID()}-${sanitizedFilename}`);
 
   // Initiate multipart with R2
   const command = new CreateMultipartUploadCommand({
@@ -147,19 +149,32 @@ export async function initiateMultipartUpload(params: {
   }
 
   // If it's the Shared Drive, we bypass DB index mapping entirely to let NAS sync purely
-  const assetId = params.isSharedDrive ? "shared-drive-asset" : crypto.randomUUID();
+  const assetId = params.isSharedDrive 
+    ? "shared-drive-asset" 
+    : (params.existingAssetId || crypto.randomUUID());
+
   if (!params.isSharedDrive) {
-    await db.insert(assets).values({
-      id: assetId,
-      folderId: params.folderId || null,
-      projectId: params.projectId || null,
-      r2Key,
-      filename: params.filename,
-      size: params.size,
-      mimeType: params.mimeType,
-      uploadedBy: userId,
-      status: "pending",
-    });
+    if (params.existingAssetId) {
+      await db.update(assets)
+        .set({
+          size: params.size,
+          status: "pending",
+          uploadedAt: new Date(),
+        })
+        .where(eq(assets.id, params.existingAssetId));
+    } else {
+      await db.insert(assets).values({
+        id: assetId,
+        folderId: params.folderId || null,
+        projectId: params.projectId || null,
+        r2Key,
+        filename: params.filename,
+        size: params.size,
+        mimeType: params.mimeType,
+        uploadedBy: userId,
+        status: "pending",
+      });
+    }
   }
 
   return { uploadId, r2Key, assetId };

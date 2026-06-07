@@ -43,7 +43,12 @@ import {
   Edit2,
   Info,
   Eye,
-  Link as LinkIcon
+  Link as LinkIcon,
+  ChevronDown,
+  FileText,
+  FolderUp,
+  Upload,
+  Table
 } from "lucide-react";
 import Link from "next/link";
 import "./drive.css";
@@ -106,7 +111,32 @@ export default function DrivePage() {
   // Toast / Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // New Dropdown State
+  const [newDropdownOpen, setNewDropdownOpen] = useState(false);
+  const newDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Text File Editor State
+  const [textModalOpen, setTextModalOpen] = useState(false);
+  const [textFileName, setTextFileName] = useState("");
+  const [textContent, setTextContent] = useState("");
+  const [textEditorMode, setTextEditorMode] = useState<"create" | "edit">("create");
+  const [textEditorAsset, setTextEditorAsset] = useState<any | null>(null);
+
+  // Docs Editor State (Quill)
+  const [docsModalOpen, setDocsModalOpen] = useState(false);
+  const [docTitle, setDocTitle] = useState("");
+  const [docsEditorMode, setDocsEditorMode] = useState<"create" | "edit">("create");
+  const [docsEditorAsset, setDocsEditorAsset] = useState<any | null>(null);
+
+  // Blank Sheet Editor State
+  const [sheetModalOpen, setSheetModalOpen] = useState(false);
+  const [sheetName, setSheetName] = useState("");
+  const [sheetCells, setSheetCells] = useState<{ [key: string]: string }>({});
+  const [sheetEditorMode, setSheetEditorMode] = useState<"create" | "edit">("create");
+  const [sheetEditorAsset, setSheetEditorAsset] = useState<any | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   // Auto-close context menu on window clicks
@@ -127,6 +157,76 @@ export default function DrivePage() {
       return () => clearTimeout(t);
     }
   }, [toastMessage]);
+
+  // Click outside "+ New" dropdown to dismiss it
+  useEffect(() => {
+    const handleCloseNewDropdown = (e: MouseEvent) => {
+      if (newDropdownRef.current && !newDropdownRef.current.contains(e.target as Node)) {
+        setNewDropdownOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleCloseNewDropdown);
+    return () => window.removeEventListener("mousedown", handleCloseNewDropdown);
+  }, []);
+
+  // Dynamically inject Quill 2.0 CDN script and stylesheet
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if ((window as any).Quill) return;
+
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css";
+    document.head.appendChild(link);
+
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.js";
+    script.async = true;
+    script.onload = () => {
+      console.log("Quill 2.0 CDN successfully injected!");
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  const editorContainerRef = useRef<HTMLDivElement>(null);
+  const quillRef = useRef<any>(null);
+
+  // Initialize Quill editor instance on Docs Modal opening
+  useEffect(() => {
+    if (!docsModalOpen || !editorContainerRef.current) return;
+    
+    editorContainerRef.current.innerHTML = "";
+    const editorDiv = document.createElement("div");
+    editorContainerRef.current.appendChild(editorDiv);
+
+    const checkAndInitQuill = setInterval(() => {
+      if ((window as any).Quill) {
+        clearInterval(checkAndInitQuill);
+        quillRef.current = new (window as any).Quill(editorDiv, {
+          theme: "snow",
+          modules: {
+            toolbar: [
+              [{ header: [1, 2, 3, false] }],
+              ["bold", "italic", "underline", "strike"],
+              [{ list: "ordered" }, { list: "bullet" }],
+              ["code-block", "blockquote"],
+              [{ color: [] }, { background: [] }],
+              ["clean"]
+            ]
+          }
+        });
+
+        if (docsEditorMode === "create") {
+          quillRef.current.root.innerHTML = "";
+        }
+      }
+    }, 50);
+
+    return () => {
+      clearInterval(checkAndInitQuill);
+      quillRef.current = null;
+    };
+  }, [docsModalOpen, docsEditorMode]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -512,7 +612,119 @@ export default function DrivePage() {
     }
   };
 
-  // CHUNKED MULTI-PART DIRECT-TO-R2 UPLOAD
+  // ==========================================
+  // MODULAR CORE UPLOAD & FOLDER RECREATOR
+  // ==========================================
+
+  const refreshExplorerContents = async () => {
+    const isShared = explorerMode === "shared";
+    const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+    if (isShared) {
+      const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
+      setFolders(loadedFolders);
+      setAssets(loadedAssets);
+    } else {
+      const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
+        projectId: selectedProjectId,
+        folderId: currentFolderId
+      });
+      setFolders(loadedFolders);
+      setAssets(loadedAssets);
+    }
+  };
+
+  const uploadSingleFile = async (
+    file: File, 
+    targetFolderId: string | null, 
+    customPrefix: string = "", 
+    existingAssetId?: string | null, 
+    existingR2Key?: string | null
+  ) => {
+    const filename = file.name;
+    setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
+
+    const isShared = explorerMode === "shared";
+
+    try {
+      // 10MB Chunks
+      const CHUNK_SIZE = 10 * 1024 * 1024;
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+      // A. Initiate upload with R2 via Next.js backend
+      const { uploadId, r2Key, assetId } = await initiateMultipartUpload({
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        projectId: selectedProjectId,
+        folderId: targetFolderId,
+        isSharedDrive: isShared,
+        prefix: customPrefix,
+        existingAssetId,
+        existingR2Key
+      });
+
+      // B. Get presigned URLs for each chunk
+      const partNumbers = Array.from({ length: totalChunks }, (_, index) => index + 1);
+      const { partUrls } = await getPresignedPartUrls({ 
+        uploadId, 
+        r2Key, 
+        partNumbers,
+        isSharedDrive: isShared
+      });
+
+      // C. Upload chunks to Cloudflare R2 directly in parallel batches
+      const parts: { PartNumber: number; ETag: string }[] = [];
+      const batchSize = 3; // Upload 3 chunks concurrently
+
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += batchSize) {
+        const batch = [];
+        for (let b = 0; b < batchSize && chunkIndex + b < totalChunks; b++) {
+          const index = chunkIndex + b;
+          const start = index * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunkSlice = file.slice(start, end);
+          const presignedUrl = partUrls[index].url;
+
+          batch.push(
+            fetch(presignedUrl, {
+              method: "PUT",
+              body: chunkSlice,
+            }).then(async (res) => {
+              if (!res.ok) throw new Error(`Chunk ${index + 1} upload failed`);
+              const etag = res.headers.get("ETag");
+              if (!etag) throw new Error(`Etag missing from chunk ${index + 1}`);
+              parts.push({ PartNumber: index + 1, ETag: etag });
+              
+              // Progress tracking
+              const completedPartsCount = parts.length;
+              setUploadProgress((prev) => ({
+                ...prev,
+                [filename]: Math.round((completedPartsCount / totalChunks) * 100)
+              }));
+            })
+          );
+        }
+        await Promise.all(batch);
+      }
+
+      // D. Complete the Multipart upload on R2 and DB index
+      await completeMultipartUpload({
+        uploadId,
+        r2Key,
+        parts,
+        assetId,
+        isSharedDrive: isShared
+      });
+
+      return { success: true, r2Key, assetId };
+
+    } catch (err) {
+      console.error("Multipart upload failed for " + filename, err);
+      alert(`Failed to upload ${filename}`);
+      throw err;
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -523,107 +735,340 @@ export default function DrivePage() {
     const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
 
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const filename = file.name;
-      setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
-
-      try {
-        // 10MB Chunks
-        const CHUNK_SIZE = 10 * 1024 * 1024;
-        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-
-        // A. Initiate upload with R2 via Next.js backend
-        const { uploadId, r2Key, assetId } = await initiateMultipartUpload({
-          filename: file.name,
-          mimeType: file.type || "application/octet-stream",
-          size: file.size,
-          projectId: selectedProjectId,
-          folderId: currentFolderId,
-          isSharedDrive: isShared,
-          prefix: prefix
-        });
-
-        // B. Get presigned URLs for each chunk
-        const partNumbers = Array.from({ length: totalChunks }, (_, index) => index + 1);
-        const { partUrls } = await getPresignedPartUrls({ 
-          uploadId, 
-          r2Key, 
-          partNumbers,
-          isSharedDrive: isShared
-        });
-
-        // C. Upload chunks to Cloudflare R2 directly in parallel batches
-        const parts: { PartNumber: number; ETag: string }[] = [];
-        const batchSize = 3; // Upload 3 chunks concurrently
-
-        for (let chunkIndex = 0; indexLimit(chunkIndex, totalChunks); chunkIndex += batchSize) {
-          const batch = [];
-          for (let b = 0; b < batchSize && chunkIndex + b < totalChunks; b++) {
-            const index = chunkIndex + b;
-            const start = index * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE, file.size);
-            const chunkSlice = file.slice(start, end);
-            const presignedUrl = partUrls[index].url;
-
-            batch.push(
-              fetch(presignedUrl, {
-                method: "PUT",
-                body: chunkSlice,
-              }).then(async (res) => {
-                if (!res.ok) throw new Error(`Chunk ${index + 1} upload failed`);
-                const etag = res.headers.get("ETag");
-                if (!etag) throw new Error(`Etag missing from chunk ${index + 1}`);
-                parts.push({ PartNumber: index + 1, ETag: etag });
-                
-                // Progress tracking
-                const completedPartsCount = parts.length;
-                setUploadProgress((prev) => ({
-                  ...prev,
-                  [filename]: Math.round((completedPartsCount / totalChunks) * 100)
-                }));
-              })
-            );
-          }
-          await Promise.all(batch);
-        }
-
-        // D. Complete the Multipart upload on R2 and DB index
-        await completeMultipartUpload({
-          uploadId,
-          r2Key,
-          parts,
-          assetId,
-          isSharedDrive: isShared
-        });
-
-        // Refresh Explorer Contents on finish
-        if (isShared) {
-          const { assets: loadedAssets } = await listSharedDriveContents(prefix);
-          setAssets(loadedAssets);
-        } else {
-          const { assets: loadedAssets } = await listDriveContents({
-            projectId: selectedProjectId,
-            folderId: currentFolderId
-          });
-          setAssets(loadedAssets);
-        }
-
-      } catch (err) {
-        console.error("Multipart upload failed for " + filename, err);
-        alert(`Failed to upload ${filename}`);
-      }
+      await uploadSingleFile(files[i], currentFolderId, prefix);
     }
+
+    await refreshExplorerContents();
   };
 
-  const indexLimit = (index: number, total: number) => index < total;
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-  const filteredAssets = assets.filter((a) =>
-    a.filename.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+    setUploadActive(true);
+
+    const isShared = explorerMode === "shared";
+    const basePrefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+
+    const localFolderCache: { [pathKey: string]: string | null } = {};
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const relativePath = file.webkitRelativePath || "";
+
+      if (isShared) {
+        let filePrefix = basePrefix;
+        if (relativePath && relativePath.includes("/")) {
+          const parts = relativePath.split("/");
+          if (parts.length > 1) {
+            const subPrefix = parts.slice(0, -1).join("/") + "/";
+            filePrefix = basePrefix + subPrefix;
+          }
+        }
+        await uploadSingleFile(file, null, filePrefix);
+      } else {
+        let targetFolderId = currentFolderId;
+
+        if (relativePath && relativePath.includes("/")) {
+          const parts = relativePath.split("/");
+          const folderParts = parts.slice(0, parts.length - 1);
+          
+          let activeParentId = currentFolderId;
+          const pathAccumulator: string[] = [];
+
+          for (const folderName of folderParts) {
+            pathAccumulator.push(folderName);
+            const pathKey = pathAccumulator.join("/");
+
+            if (localFolderCache[pathKey]) {
+              activeParentId = localFolderCache[pathKey];
+            } else {
+              const existing = folders.find(
+                (f) => f.name === folderName && f.parentId === activeParentId
+              );
+
+              if (existing) {
+                activeParentId = existing.id;
+                localFolderCache[pathKey] = activeParentId;
+              } else {
+                const createResult = await createFolder(
+                  folderName,
+                  selectedProjectId || undefined,
+                  activeParentId
+                );
+                if (createResult && createResult.success && createResult.id) {
+                  activeParentId = createResult.id;
+                  localFolderCache[pathKey] = activeParentId;
+                } else {
+                  throw new Error(`Failed to create folder ${folderName}`);
+                }
+              }
+            }
+          }
+          targetFolderId = activeParentId;
+        }
+
+        await uploadSingleFile(file, targetFolderId);
+      }
+    }
+
+    await refreshExplorerContents();
+  };
 
   const triggerFileSelect = () => {
     fileInputRef.current?.click();
   };
+
+  const triggerFolderSelect = () => {
+    folderInputRef.current?.click();
+  };
+
+  // ==========================================
+  // PROGRAMMATIC CREATORS & EDITORS HANDLERS
+  // ==========================================
+
+  const handleOpenTextCreator = () => {
+    setTextFileName("Untitled.txt");
+    setTextContent("");
+    setTextEditorMode("create");
+    setTextEditorAsset(null);
+    setTextModalOpen(true);
+  };
+
+  const handleOpenTextEditor = async (asset: any) => {
+    try {
+      setTextFileName(asset.filename);
+      setTextEditorMode("edit");
+      setTextEditorAsset(asset);
+      setTextModalOpen(true);
+
+      const isShared = explorerMode === "shared";
+      const downloadResult = isShared 
+        ? await getSharedDownloadUrl(asset.id) 
+        : await getDownloadUrl(asset.id);
+
+      const res = await fetch(downloadResult.downloadUrl);
+      if (res.ok) {
+        const text = await res.text();
+        setTextContent(text);
+      }
+    } catch (err) {
+      console.error("Failed to load text file content", err);
+    }
+  };
+
+  const handleSaveTextFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!textFileName.trim()) return;
+
+    setUploadActive(true);
+    setTextModalOpen(false);
+
+    try {
+      const file = new (window as any).File([textContent], textFileName, { type: "text/plain" });
+      
+      const isShared = explorerMode === "shared";
+      const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+
+      if (textEditorMode === "edit" && textEditorAsset) {
+        await uploadSingleFile(
+          file, 
+          textEditorAsset.folderId, 
+          prefix, 
+          textEditorAsset.id, 
+          textEditorAsset.r2Key
+        );
+      } else {
+        await uploadSingleFile(file, currentFolderId, prefix);
+      }
+
+      await refreshExplorerContents();
+    } catch (err) {
+      alert("Failed to save text file");
+    }
+  };
+
+  const handleOpenDocsCreator = () => {
+    setDocTitle("Untitled Document");
+    setDocsEditorMode("create");
+    setDocsEditorAsset(null);
+    setDocsModalOpen(true);
+  };
+
+  const handleOpenDocsEditor = async (asset: any) => {
+    try {
+      setDocTitle(asset.filename.replace(/\.html$/i, ""));
+      setDocsEditorMode("edit");
+      setDocsEditorAsset(asset);
+      setDocsModalOpen(true);
+
+      const isShared = explorerMode === "shared";
+      const downloadResult = isShared 
+        ? await getSharedDownloadUrl(asset.id) 
+        : await getDownloadUrl(asset.id);
+
+      const res = await fetch(downloadResult.downloadUrl);
+      if (res.ok) {
+        const rawHtml = await res.text();
+        
+        setTimeout(() => {
+          if (quillRef.current) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(rawHtml, "text/html");
+            const qlEditor = doc.querySelector(".ql-editor");
+            const content = qlEditor ? qlEditor.innerHTML : doc.body.innerHTML;
+            quillRef.current.root.innerHTML = content;
+          }
+        }, 300);
+      }
+    } catch (err) {
+      console.error("Failed to load document content", err);
+    }
+  };
+
+  const handleSaveDocsFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docTitle.trim() || !quillRef.current) return;
+
+    setUploadActive(true);
+    setDocsModalOpen(false);
+
+    try {
+      const htmlContent = quillRef.current.root.innerHTML;
+      const fullHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${docTitle}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.snow.css">
+  <style>
+    body { padding: 32px; font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; max-width: 800px; margin: 0 auto; }
+    .ql-editor { font-size: 16px; line-height: 1.6; }
+    @media (prefers-color-scheme: light) {
+      body { background: #ffffff; color: #0f172a; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ql-container ql-snow">
+    <div class="ql-editor">
+      ${htmlContent}
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const filename = docTitle.toLowerCase().endsWith(".html") ? docTitle : `${docTitle}.html`;
+      const file = new (window as any).File([fullHTML], filename, { type: "text/html" });
+
+      const isShared = explorerMode === "shared";
+      const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+
+      if (docsEditorMode === "edit" && docsEditorAsset) {
+        await uploadSingleFile(
+          file, 
+          docsEditorAsset.folderId, 
+          prefix, 
+          docsEditorAsset.id, 
+          docsEditorAsset.r2Key
+        );
+      } else {
+        await uploadSingleFile(file, currentFolderId, prefix);
+      }
+
+      await refreshExplorerContents();
+    } catch (err) {
+      alert("Failed to save Document");
+    }
+  };
+
+  const columnsList = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const rowsCount = 20;
+
+  const handleOpenSheetCreator = () => {
+    setSheetName("Untitled Sheet");
+    setSheetCells({});
+    setSheetEditorMode("create");
+    setSheetEditorAsset(null);
+    setSheetModalOpen(true);
+  };
+
+  const handleOpenSheetEditor = async (asset: any) => {
+    try {
+      setSheetName(asset.filename.replace(/\.sheet\.json$/i, ""));
+      setSheetEditorMode("edit");
+      setSheetEditorAsset(asset);
+      setSheetModalOpen(true);
+
+      const isShared = explorerMode === "shared";
+      const downloadResult = isShared 
+        ? await getSharedDownloadUrl(asset.id) 
+        : await getDownloadUrl(asset.id);
+
+      const res = await fetch(downloadResult.downloadUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.cells) {
+          setSheetCells(data.cells);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load spreadsheet content", err);
+    }
+  };
+
+  const handleSaveSheetFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sheetName.trim()) return;
+
+    setUploadActive(true);
+    setSheetModalOpen(false);
+
+    try {
+      const sheetData = {
+        columns: columnsList,
+        rowsCount: rowsCount,
+        cells: sheetCells
+      };
+
+      const filename = sheetName.toLowerCase().endsWith(".sheet.json") 
+        ? sheetName 
+        : `${sheetName}.sheet.json`;
+
+      const file = new (window as any).File([JSON.stringify(sheetData, null, 2)], filename, { type: "application/json" });
+
+      const isShared = explorerMode === "shared";
+      const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+
+      if (sheetEditorMode === "edit" && sheetEditorAsset) {
+        await uploadSingleFile(
+          file, 
+          sheetEditorAsset.folderId, 
+          prefix, 
+          sheetEditorAsset.id, 
+          sheetEditorAsset.r2Key
+        );
+      } else {
+        await uploadSingleFile(file, currentFolderId, prefix);
+      }
+
+      await refreshExplorerContents();
+    } catch (err) {
+      alert("Failed to save Sheet");
+    }
+  };
+
+  const handleCellChange = (col: string, row: number, value: string) => {
+    const refKey = `${col}${row}`;
+    setSheetCells((prev) => ({
+      ...prev,
+      [refKey]: value
+    }));
+  };
+
+  const filteredAssets = assets.filter((a) =>
+    a.filename.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const formatBytes = (bytes: number, decimals = 2) => {
     if (!+bytes) return "0 Bytes";
@@ -654,17 +1099,7 @@ export default function DrivePage() {
           <span>Motionsewa <span className="brand-accent">Drive</span></span>
         </div>
 
-        <button onClick={triggerFileSelect} className="btn-upload-trigger">
-          <UploadCloud size={20} />
-          <span>Upload Video</span>
-        </button>
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          style={{ display: "none" }} 
-          multiple 
-          onChange={handleFileUpload}
-        />
+
 
         <nav className="nav-links">
           <button 
@@ -787,11 +1222,90 @@ export default function DrivePage() {
                 : (folderPath[folderPath.length - 1]?.name || "My Drive")
               }
             </h2>
-            <div className="explorer-actions">
-              <button onClick={() => setFolderModalOpen(true)} className="btn-secondary">
-                <FolderPlus size={18} />
-                <span>New Folder</span>
-              </button>
+            <div className="explorer-actions" ref={newDropdownRef}>
+              <div style={{ position: "relative" }}>
+                <button 
+                  onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
+                  className="btn-primary"
+                  style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px" }}
+                >
+                  <Plus size={18} />
+                  <span>New</span>
+                  <ChevronDown size={14} style={{ opacity: 0.8 }} />
+                </button>
+
+                {newDropdownOpen && (
+                  <div className="new-dropdown-menu animate-scale-up">
+                    <button 
+                      onClick={() => {
+                        setFolderModalOpen(true);
+                        setNewDropdownOpen(false);
+                      }} 
+                      className="dropdown-item"
+                    >
+                      <FolderPlus size={16} />
+                      <span>New Folder</span>
+                    </button>
+                    
+                    <button 
+                      onClick={() => {
+                        handleOpenTextCreator();
+                        setNewDropdownOpen(false);
+                      }} 
+                      className="dropdown-item"
+                    >
+                      <FileText size={16} />
+                      <span>Create Text File</span>
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        handleOpenDocsCreator();
+                        setNewDropdownOpen(false);
+                      }} 
+                      className="dropdown-item"
+                    >
+                      <FileText size={16} style={{ color: "var(--accent-indigo)" }} />
+                      <span>Docs (Rich Document)</span>
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        handleOpenSheetCreator();
+                        setNewDropdownOpen(false);
+                      }} 
+                      className="dropdown-item"
+                    >
+                      <Table size={16} style={{ color: "var(--accent-success, #10b981)" }} />
+                      <span>Blank Sheet</span>
+                    </button>
+
+                    <hr className="dropdown-divider" />
+
+                    <button 
+                      onClick={() => {
+                        triggerFileSelect();
+                        setNewDropdownOpen(false);
+                      }} 
+                      className="dropdown-item"
+                    >
+                      <Upload size={16} />
+                      <span>Upload File</span>
+                    </button>
+
+                    <button 
+                      onClick={() => {
+                        triggerFolderSelect();
+                        setNewDropdownOpen(false);
+                      }} 
+                      className="dropdown-item"
+                    >
+                      <FolderUp size={16} />
+                      <span>Upload Folder</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1066,6 +1580,38 @@ export default function DrivePage() {
                 <LinkIcon size={16} />
                 <span>Copy Link</span>
               </button>
+              {(() => {
+                const filename = contextMenu.item?.filename || "";
+                const isEditable = 
+                  filename.endsWith(".txt") || 
+                  filename.endsWith(".md") || 
+                  filename.endsWith(".html") || 
+                  filename.endsWith(".sheet.json");
+                
+                if (isEditable) {
+                  return (
+                    <button 
+                      onClick={() => {
+                        const asset = contextMenu.item;
+                        if (filename.endsWith(".sheet.json")) {
+                          handleOpenSheetEditor(asset);
+                        } else if (filename.endsWith(".html")) {
+                          handleOpenDocsEditor(asset);
+                        } else {
+                          handleOpenTextEditor(asset);
+                        }
+                        setContextMenu(null);
+                      }}
+                      className="context-menu-item"
+                      style={{ color: "var(--accent-indigo)" }}
+                    >
+                      <Edit2 size={16} />
+                      <span>Edit File</span>
+                    </button>
+                  );
+                }
+                return null;
+              })()}
               <button 
                 onClick={() => {
                   handleOpenRename(contextMenu.item, "file");
@@ -1286,6 +1832,196 @@ export default function DrivePage() {
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* HIDDEN FILE/FOLDER SELECT INPUTS */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        style={{ display: "none" }} 
+        multiple 
+        onChange={handleFileUpload}
+      />
+      <input 
+        type="file" 
+        ref={folderInputRef} 
+        style={{ display: "none" }} 
+        webkitdirectory="true"
+        directory=""
+        multiple 
+        onChange={handleFolderUpload}
+        {...({ webkitdirectory: "", directory: "" } as any)}
+      />
+
+      {/* PLAIN TEXT CREATOR / EDITOR MODAL */}
+      {textModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: "800px", width: "90vw" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
+                {textEditorMode === "create" ? "Create Text File" : "Edit Text File"}
+              </h3>
+            </div>
+            <form onSubmit={handleSaveTextFile} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Filename</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={textFileName}
+                  onChange={(e) => setTextFileName(e.target.value)}
+                  placeholder="e.g. notes.txt"
+                  required
+                  disabled={textEditorMode === "edit"}
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">File Content</label>
+                <textarea 
+                  className="form-input" 
+                  style={{ fontFamily: "monospace", minHeight: "350px", resize: "vertical", fontSize: "14px", lineHeight: "1.5", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
+                  value={textContent}
+                  onChange={(e) => setTextContent(e.target.value)}
+                  placeholder="Start typing your text here..."
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                <button 
+                  type="button" 
+                  onClick={() => setTextModalOpen(false)} 
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Save File
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUILL DOCS RICH-TEXT MODAL */}
+      {docsModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: "900px", width: "95vw", maxHeight: "95vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
+                {docsEditorMode === "create" ? "Create Rich Document" : "Edit Rich Document"}
+              </h3>
+            </div>
+            <form onSubmit={handleSaveDocsFile} style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1, overflow: "hidden" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Document Title</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={docTitle}
+                  onChange={(e) => setDocTitle(e.target.value)}
+                  placeholder="e.g. Project Proposal"
+                  required
+                  disabled={docsEditorMode === "edit"}
+                />
+              </div>
+              
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "350px", overflow: "hidden", backgroundColor: "#fff", color: "#333", borderRadius: "8px" }} className="quill-editor-wrapper">
+                <div ref={editorContainerRef} style={{ flex: 1, overflow: "auto" }} />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+                <button 
+                  type="button" 
+                  onClick={() => setDocsModalOpen(false)} 
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Save Document
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SPREADSHEET SHEET MODAL */}
+      {sheetModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: "1000px", width: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
+              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
+                {sheetEditorMode === "create" ? "Create Blank Sheet" : "Edit Spreadsheet"}
+              </h3>
+            </div>
+            <form onSubmit={handleSaveSheetFile} style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1, overflow: "hidden" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Spreadsheet Name</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={sheetName}
+                  onChange={(e) => setSheetName(e.target.value)}
+                  placeholder="e.g. Budget 2026"
+                  required
+                  disabled={sheetEditorMode === "edit"}
+                />
+              </div>
+              
+              <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border-color)", borderRadius: "8px", backgroundColor: "var(--bg-primary)" }} className="sheet-grid-wrapper">
+                <table className="spreadsheet-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: "40px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: "6px", color: "var(--text-secondary)", textAlign: "center", position: "sticky", top: 0 }}>#</th>
+                      {columnsList.map((col) => (
+                        <th key={col} style={{ width: "100px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: "6px", color: "var(--text-secondary)", textAlign: "center", position: "sticky", top: 0 }}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: rowsCount }).map((_, rIdx) => {
+                      const rowNumber = rIdx + 1;
+                      return (
+                        <tr key={rowNumber}>
+                          <td style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: "6px", color: "var(--text-secondary)", fontWeight: "bold", textAlign: "center" }}>{rowNumber}</td>
+                          {columnsList.map((col) => {
+                            const refKey = `${col}${rowNumber}`;
+                            return (
+                              <td key={col} style={{ border: "1px solid var(--border-color)", padding: 0 }}>
+                                <input 
+                                  type="text" 
+                                  style={{ width: "100%", border: "none", outline: "none", padding: "8px", backgroundColor: "transparent", color: "var(--text-primary)", fontSize: "13px", fontFamily: "inherit" }}
+                                  value={sheetCells[refKey] || ""}
+                                  onChange={(e) => handleCellChange(col, rowNumber, e.target.value)}
+                                  placeholder=""
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+                <button 
+                  type="button" 
+                  onClick={() => setSheetModalOpen(false)} 
+                  className="btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Save Sheet
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
