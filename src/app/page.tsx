@@ -134,6 +134,17 @@ export default function DrivePage() {
   const [deleteProjectModalOpen, setDeleteProjectModalOpen] = useState(false);
   const [selectedProjectToDelete, setSelectedProjectToDelete] = useState<any | null>(null);
 
+  // Unified Custom Confirm Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    warning?: string;
+    confirmText?: string;
+    confirmColor?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   // Bulk Selection States
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
@@ -640,52 +651,73 @@ export default function DrivePage() {
   // Delete File
   const handleDeleteFile = async (assetId: string) => {
     const targetBucketText = explorerMode === "shared" ? "shared Cloudflare R2 bucket (video-assets)" : "Web Drive and Cloudflare R2";
-    if (!confirm(`Are you sure you want to delete this file from the ${targetBucketText}?`)) return;
-
-    try {
-      if (explorerMode === "shared") {
-        await deleteSharedAsset(assetId);
-        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-        const { assets: loadedAssets } = await listSharedDriveContents(prefix);
-        setAssets(loadedAssets);
-      } else {
-        await deleteAsset(assetId);
-        // Reload assets
-        const { assets: loadedAssets } = await listDriveContents({
-          projectId: selectedProjectId,
-          folderId: currentFolderId
-        });
-        setAssets(loadedAssets);
+    
+    setConfirmModal({
+      open: true,
+      title: "Delete File?",
+      message: `Are you sure you want to delete this file from the ${targetBucketText}?`,
+      warning: "This action cannot be undone.",
+      confirmText: "Delete Permanently",
+      confirmColor: "var(--accent-danger)",
+      onConfirm: async () => {
+        try {
+          if (explorerMode === "shared") {
+            await deleteSharedAsset(assetId);
+            const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+            const { assets: loadedAssets } = await listSharedDriveContents(prefix);
+            setAssets(loadedAssets);
+          } else {
+            await deleteAsset(assetId);
+            // Reload assets
+            const { assets: loadedAssets } = await listDriveContents({
+              projectId: selectedProjectId,
+              folderId: currentFolderId
+            });
+            setAssets(loadedAssets);
+          }
+          setToastMessage("File deleted successfully!");
+          setTimeout(() => setToastMessage(null), 3000);
+        } catch (err) {
+          alert("Failed to delete file");
+        }
       }
-    } catch (err) {
-      alert("Failed to delete file");
-    }
+    });
   };
 
   // Delete Folder
   const handleDeleteFolder = async (folderId: string, folderName: string) => {
-    if (!confirm(`Are you sure you want to delete folder "${folderName}"? All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.`)) return;
-
-    try {
-      if (explorerMode === "shared") {
-        await deleteSharedFolder(folderId);
-        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-        const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
-        setFolders(loadedFolders);
-        setAssets(loadedAssets);
-      } else {
-        await deleteFolder(folderId);
-        // Reload drive contents
-        const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
-          projectId: selectedProjectId,
-          folderId: currentFolderId
-        });
-        setFolders(loadedFolders);
-        setAssets(loadedAssets);
+    setConfirmModal({
+      open: true,
+      title: "Delete Folder?",
+      message: `Are you sure you want to delete folder "${folderName}"?`,
+      warning: "All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.",
+      confirmText: "Delete Folder Permanently",
+      confirmColor: "var(--accent-danger)",
+      onConfirm: async () => {
+        try {
+          if (explorerMode === "shared") {
+            await deleteSharedFolder(folderId);
+            const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+            const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
+            setFolders(loadedFolders);
+            setAssets(loadedAssets);
+          } else {
+            await deleteFolder(folderId);
+            // Reload drive contents
+            const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
+              projectId: selectedProjectId,
+              folderId: currentFolderId
+            });
+            setFolders(loadedFolders);
+            setAssets(loadedAssets);
+          }
+          setToastMessage("Folder deleted successfully!");
+          setTimeout(() => setToastMessage(null), 3000);
+        } catch (err) {
+          alert("Failed to delete folder");
+        }
       }
-    } catch (err) {
-      alert("Failed to delete folder");
-    }
+    });
   };
 
   // ==========================================
@@ -766,27 +798,35 @@ export default function DrivePage() {
     const totalCount = selectedAssetIds.size + selectedFolderIds.size;
     if (totalCount === 0) return;
 
-    if (!confirm(`Are you sure you want to permanently delete the ${totalCount} selected item(s) from the Web Drive and Cloudflare R2? This action cannot be undone.`)) return;
+    setConfirmModal({
+      open: true,
+      title: "Delete Selected Items?",
+      message: `Are you sure you want to permanently delete the ${totalCount} selected item(s) from the Web Drive and Cloudflare R2?`,
+      warning: "This action cannot be undone.",
+      confirmText: `Delete ${totalCount} Item(s)`,
+      confirmColor: "var(--accent-danger)",
+      onConfirm: async () => {
+        setLoading(true);
+        try {
+          const isShared = explorerMode === "shared";
+          await bulkDeleteItems({
+            assetIds: Array.from(selectedAssetIds),
+            folderIds: Array.from(selectedFolderIds),
+            isSharedDrive: isShared
+          });
 
-    setLoading(true);
-    try {
-      const isShared = explorerMode === "shared";
-      await bulkDeleteItems({
-        assetIds: Array.from(selectedAssetIds),
-        folderIds: Array.from(selectedFolderIds),
-        isSharedDrive: isShared
-      });
-
-      handleClearSelection();
-      await refreshExplorerContents();
-      setToastMessage("Selected items deleted successfully!");
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err) {
-      console.error("Bulk delete failed", err);
-      alert("Failed to delete selected items");
-    } finally {
-      setLoading(false);
-    }
+          handleClearSelection();
+          await refreshExplorerContents();
+          setToastMessage("Selected items deleted successfully!");
+          setTimeout(() => setToastMessage(null), 3000);
+        } catch (err) {
+          console.error("Bulk delete failed", err);
+          alert("Failed to delete selected items");
+        } finally {
+          setLoading(false);
+        }
+      }
+    });
   };
 
   // Load folders for destination picker
@@ -2062,6 +2102,43 @@ export default function DrivePage() {
                 style={{ backgroundColor: "var(--accent-danger)" }}
               >
                 Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* UNIFIED CUSTOM CONFIRM DIALOG MODAL */}
+      {confirmModal && confirmModal.open && (
+        <div className="modal-overlay">
+          <div className="modal animate-scale-up">
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: confirmModal.confirmColor || "var(--accent-danger)" }}>
+              {confirmModal.title}
+            </h3>
+            <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
+              {confirmModal.message}
+            </p>
+            {confirmModal.warning && (
+              <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-danger)", lineHeight: "1.4" }}>
+                <strong>WARNING:</strong> {confirmModal.warning}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+              <button 
+                type="button" 
+                onClick={() => setConfirmModal((prev) => prev ? { ...prev, open: false } : null)} 
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  confirmModal.onConfirm();
+                  setConfirmModal(null);
+                }} 
+                className="btn-primary" 
+                style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-danger)" }}
+              >
+                {confirmModal.confirmText || "Confirm"}
               </button>
             </div>
           </div>
