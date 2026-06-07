@@ -69,6 +69,7 @@ export const folders = pgTable("folder", {
   id: text("id").primaryKey(),
   projectId: text("projectId").references(() => projects.id, { onDelete: "cascade" }),
   parentId: text("parentId"), // Self-referencing tree representation
+  userId: text("userId").references(() => user.id, { onDelete: "cascade" }), // Folder owner for per-user isolation
   name: text("name").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
