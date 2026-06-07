@@ -130,6 +130,7 @@ export default function DrivePage() {
   // Destination Folder Picker Modal State
   const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
   const [pickerAction, setPickerAction] = useState<"move" | "copy" | null>(null);
+  const [pickerDriveMode, setPickerDriveMode] = useState<"personal" | "shared">("personal");
   const [pickerCurrentFolderId, setPickerCurrentFolderId] = useState<string | null>(null); // UUID (personal) or Prefix Path (shared)
   const [pickerFolderPath, setPickerFolderPath] = useState<{ id: string | null; name: string }[]>([]);
   const [pickerFolders, setPickerFolders] = useState<any[]>([]);
@@ -738,10 +739,15 @@ export default function DrivePage() {
   };
 
   // Load folders for destination picker
-  const handleLoadPickerDirectories = async (folderId: string | null, projectId: string | null) => {
+  const handleLoadPickerDirectories = async (
+    folderId: string | null, 
+    projectId: string | null, 
+    targetDriveMode?: "personal" | "shared"
+  ) => {
     setPickerLoading(true);
     try {
-      const isShared = explorerMode === "shared";
+      const mode = targetDriveMode || pickerDriveMode;
+      const isShared = mode === "shared";
       if (isShared) {
         // Shared Drive: List physical folders under target prefix (folderId is the prefix path string)
         const prefix = folderId || "";
@@ -777,26 +783,36 @@ export default function DrivePage() {
   // Open Destination Picker Modal
   const handleOpenDestinationPicker = async (action: "move" | "copy") => {
     setPickerAction(action);
+    setPickerDriveMode(explorerMode);
     setPickerCurrentFolderId(null);
     setPickerFolderPath([]);
     setDestinationPickerOpen(true);
-    await handleLoadPickerDirectories(null, null);
+    await handleLoadPickerDirectories(null, null, explorerMode);
+  };
+
+  // Toggle Drive Mode Inside Destination Picker
+  const handleTogglePickerDriveMode = async (mode: "personal" | "shared") => {
+    if (pickerDriveMode === mode) return;
+    setPickerDriveMode(mode);
+    setPickerCurrentFolderId(null);
+    setPickerFolderPath([]);
+    await handleLoadPickerDirectories(null, null, mode);
   };
 
   // Click handler to dive into a subdirectory in picker
   const handlePickerNavigate = async (item: any) => {
-    const isShared = explorerMode === "shared";
+    const isShared = pickerDriveMode === "shared";
     if (isShared) {
       const targetPrefix = item.id;
       setPickerCurrentFolderId(targetPrefix);
       setPickerFolderPath(prev => [...prev, { id: targetPrefix, name: item.name }]);
-      await handleLoadPickerDirectories(targetPrefix, null);
+      await handleLoadPickerDirectories(targetPrefix, null, "shared");
     } else {
       if (item.isProject) {
         const projId = item.projectId;
         setPickerCurrentFolderId(null);
         setPickerFolderPath([{ id: `PROJECT:${projId}`, name: item.name }]);
-        await handleLoadPickerDirectories(null, projId);
+        await handleLoadPickerDirectories(null, projId, "personal");
       } else {
         const firstSegment = pickerFolderPath[0];
         const projId = firstSegment && firstSegment.id?.startsWith("PROJECT:") 
@@ -805,18 +821,18 @@ export default function DrivePage() {
 
         setPickerCurrentFolderId(item.id);
         setPickerFolderPath(prev => [...prev, { id: item.id, name: item.name }]);
-        await handleLoadPickerDirectories(item.id, projId);
+        await handleLoadPickerDirectories(item.id, projId, "personal");
       }
     }
   };
 
   // Picker Breadcrumb Navigation
   const handlePickerBreadcrumbClick = async (index: number) => {
-    const isShared = explorerMode === "shared";
+    const isShared = pickerDriveMode === "shared";
     if (index === -1) {
       setPickerCurrentFolderId(null);
       setPickerFolderPath([]);
-      await handleLoadPickerDirectories(null, null);
+      await handleLoadPickerDirectories(null, null, pickerDriveMode);
     } else {
       const segment = pickerFolderPath[index];
       const newPath = pickerFolderPath.slice(0, index + 1);
@@ -824,19 +840,19 @@ export default function DrivePage() {
 
       if (isShared) {
         setPickerCurrentFolderId(segment.id);
-        await handleLoadPickerDirectories(segment.id, null);
+        await handleLoadPickerDirectories(segment.id, null, "shared");
       } else {
         if (segment.id?.startsWith("PROJECT:")) {
           const projId = segment.id.substring(8);
           setPickerCurrentFolderId(null);
-          await handleLoadPickerDirectories(null, projId);
+          await handleLoadPickerDirectories(null, projId, "personal");
         } else {
           const firstSegment = newPath[0];
           const projId = firstSegment && firstSegment.id?.startsWith("PROJECT:") 
             ? firstSegment.id.substring(8) 
             : null;
           setPickerCurrentFolderId(segment.id);
-          await handleLoadPickerDirectories(segment.id, projId);
+          await handleLoadPickerDirectories(segment.id, projId, "personal");
         }
       }
     }
@@ -850,11 +866,12 @@ export default function DrivePage() {
     setDestinationPickerOpen(false);
 
     try {
-      const isShared = explorerMode === "shared";
+      const sourceIsSharedDrive = explorerMode === "shared";
+      const targetIsSharedDrive = pickerDriveMode === "shared";
       let targetFolderId: string | null = null;
       let targetProjectId: string | null = null;
 
-      if (isShared) {
+      if (targetIsSharedDrive) {
         targetFolderId = pickerCurrentFolderId;
       } else {
         targetFolderId = pickerCurrentFolderId;
@@ -870,7 +887,8 @@ export default function DrivePage() {
           folderIds: Array.from(selectedFolderIds),
           targetFolderId,
           targetProjectId,
-          isSharedDrive: isShared
+          sourceIsSharedDrive,
+          targetIsSharedDrive
         });
         setToastMessage("Items moved successfully!");
       } else if (pickerAction === "copy") {
@@ -879,7 +897,8 @@ export default function DrivePage() {
           folderIds: Array.from(selectedFolderIds),
           targetFolderId,
           targetProjectId,
-          isSharedDrive: isShared
+          sourceIsSharedDrive,
+          targetIsSharedDrive
         });
         setToastMessage("Items copied successfully!");
       }
@@ -2496,6 +2515,46 @@ export default function DrivePage() {
               </button>
             </div>
 
+            {/* Drive Toggle Tabs */}
+            <div className="picker-tabs" style={{ display: "flex", gap: "4px", padding: "4px", backgroundColor: "var(--bg-primary)", borderRadius: "8px", border: "1px solid var(--border-color)", marginBottom: "16px" }}>
+              <button
+                type="button"
+                onClick={() => handleTogglePickerDriveMode("personal")}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: "6px",
+                  border: "none",
+                  backgroundColor: pickerDriveMode === "personal" ? "var(--border-color)" : "transparent",
+                  color: pickerDriveMode === "personal" ? "var(--text-primary)" : "var(--text-secondary)",
+                  fontWeight: pickerDriveMode === "personal" ? "600" : "500",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+              >
+                My Drive (Personal)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTogglePickerDriveMode("shared")}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  borderRadius: "6px",
+                  border: "none",
+                  backgroundColor: pickerDriveMode === "shared" ? "var(--border-color)" : "transparent",
+                  color: pickerDriveMode === "shared" ? "var(--text-primary)" : "var(--text-secondary)",
+                  fontWeight: pickerDriveMode === "shared" ? "600" : "500",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  transition: "all 0.2s"
+                }}
+              >
+                Shared Drive
+              </button>
+            </div>
+
             {/* Picker Breadcrumbs */}
             <div className="picker-breadcrumbs" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px", marginBottom: "16px", padding: "8px 12px", background: "var(--bg-primary)", borderRadius: "8px", border: "1px solid var(--border-color)", fontSize: "13px" }}>
               <span 
@@ -2503,7 +2562,7 @@ export default function DrivePage() {
                 style={{ cursor: "pointer", color: pickerFolderPath.length === 0 ? "var(--brand-accent)" : "var(--text-secondary)", fontWeight: "500" }}
                 onClick={() => handlePickerBreadcrumbClick(-1)}
               >
-                {explorerMode === "shared" ? "Shared Drive" : "My Drive"}
+                {pickerDriveMode === "shared" ? "Shared Drive" : "My Drive"}
               </span>
               {pickerFolderPath.map((item, index) => (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -2570,7 +2629,7 @@ export default function DrivePage() {
                 <span style={{ fontSize: "11px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Target Destination:</span>
                 <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {pickerFolderPath.length === 0 
-                    ? (explorerMode === "shared" ? "Shared Drive root" : "My Drive (root)")
+                    ? (pickerDriveMode === "shared" ? "Shared Drive root" : "My Drive (root)")
                     : pickerFolderPath[pickerFolderPath.length - 1].name
                   }
                 </span>
