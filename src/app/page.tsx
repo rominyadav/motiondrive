@@ -39,6 +39,7 @@ import {
   Search, 
   FolderPlus, 
   LayoutGrid, 
+  List,
   ChevronRight, 
   LogOut, 
   Sliders, 
@@ -84,6 +85,15 @@ export default function DrivePage() {
   const [folders, setFolders] = useState<any[]>([]);
   const [assets, setAssets] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"table" | "icons">("table");
+
+  const filteredFolders = folders.filter((f) =>
+    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredAssets = assets.filter((a) =>
+    a.filename.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // Modals state
   const [folderModalOpen, setFolderModalOpen] = useState(false);
@@ -199,6 +209,19 @@ export default function DrivePage() {
       window.removeEventListener("contextmenu", handleCloseMenu);
     };
   }, []);
+
+  // Sync viewMode from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("motiondrive_view_mode");
+    if (saved === "icons" || saved === "table") {
+      setViewMode(saved);
+    }
+  }, []);
+
+  const changeViewMode = (mode: "table" | "icons") => {
+    setViewMode(mode);
+    localStorage.setItem("motiondrive_view_mode", mode);
+  };
 
   // Toast message auto-dismiss
   useEffect(() => {
@@ -764,9 +787,9 @@ export default function DrivePage() {
 
   // Check if all viewed items are selected
   const isAllSelected = () => {
-    if (folders.length === 0 && assets.length === 0) return false;
-    const allFoldersSelected = folders.every(f => selectedFolderIds.has(f.id));
-    const allAssetsSelected = assets.every(a => selectedAssetIds.has(a.id));
+    if (filteredFolders.length === 0 && filteredAssets.length === 0) return false;
+    const allFoldersSelected = filteredFolders.every(f => selectedFolderIds.has(f.id));
+    const allAssetsSelected = filteredAssets.every(a => selectedAssetIds.has(a.id));
     return allFoldersSelected && allAssetsSelected;
   };
 
@@ -776,24 +799,24 @@ export default function DrivePage() {
       // Deselect all
       setSelectedFolderIds(prev => {
         const next = new Set(prev);
-        folders.forEach(f => next.delete(f.id));
+        filteredFolders.forEach(f => next.delete(f.id));
         return next;
       });
       setSelectedAssetIds(prev => {
         const next = new Set(prev);
-        assets.forEach(a => next.delete(a.id));
+        filteredAssets.forEach(a => next.delete(a.id));
         return next;
       });
     } else {
       // Select all in current view
       setSelectedFolderIds(prev => {
         const next = new Set(prev);
-        folders.forEach(f => next.add(f.id));
+        filteredFolders.forEach(f => next.add(f.id));
         return next;
       });
       setSelectedAssetIds(prev => {
         const next = new Set(prev);
-        assets.forEach(a => next.add(a.id));
+        filteredAssets.forEach(a => next.add(a.id));
         return next;
       });
     }
@@ -1467,9 +1490,7 @@ export default function DrivePage() {
     }));
   };
 
-  const filteredAssets = assets.filter((a) =>
-    a.filename.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+
 
   const formatBytes = (bytes: number, decimals = 2) => {
     if (!+bytes) return "0 Bytes";
@@ -1700,6 +1721,23 @@ export default function DrivePage() {
               }
             </h2>
             <div className="explorer-actions" ref={newDropdownRef}>
+              <div className="view-mode-toggle">
+                <button
+                  onClick={() => changeViewMode("table")}
+                  className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
+                  title="Table View"
+                >
+                  <List size={18} />
+                </button>
+                <button
+                  onClick={() => changeViewMode("icons")}
+                  className={`toggle-btn ${viewMode === "icons" ? "active" : ""}`}
+                  title="Icons View"
+                >
+                  <LayoutGrid size={18} />
+                </button>
+              </div>
+
               <div style={{ position: "relative" }}>
                 <button 
                   onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
@@ -1786,160 +1824,328 @@ export default function DrivePage() {
             </div>
           </div>
 
-          {/* FOLDERS GRID SECTION */}
-          {folders.length > 0 && (
-            <div style={{ marginBottom: "32px" }}>
-              <h3 className="section-title">Folders</h3>
-              <div className="folders-grid">
-                {folders.map((folder) => {
-                  const isFolderSelected = selectedFolderIds.has(folder.id);
-                  return (
-                    <div 
-                      key={folder.id} 
-                      className={`folder-card ${isFolderSelected ? "selected" : ""}`}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        navigateToFolder(folder);
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigateToFolder(folder);
-                      }}
-                      onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
-                    >
-                      <button
+          {/* VIEW RENDER: TABLE OR ICONS */}
+          {viewMode === "table" ? (
+            /* ========================================================
+               1. UNIFIED TABLE LIST VIEW (DEFAULT)
+               ======================================================== */
+            <div>
+              {filteredFolders.length === 0 && filteredAssets.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <File size={36} style={{ marginBottom: "12px" }} />
+                  <p style={{ fontSize: "14px" }}>No folders or files found here yet.</p>
+                </div>
+              ) : (
+                <div className="files-container">
+                  <div className="table-header">
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleToggleFolderSelection(folder.id);
+                          handleSelectAll();
                         }}
-                        className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
-                        title={isFolderSelected ? "Deselect folder" : "Select folder"}
+                        className={`master-select-checkbox ${isAllSelected() ? "selected" : ""}`}
+                        title="Select All / None"
                       >
-                        {isFolderSelected ? (
+                        {isAllSelected() ? (
                           <CheckSquare size={16} className="brand-accent" />
                         ) : (
-                          <Square size={16} className="checkbox-unselected" />
+                          <Square size={16} />
                         )}
                       </button>
-
-                      <Folder className="folder-icon" size={24} />
-                      <span className="folder-name">{folder.name}</span>
-                      {isAdmin && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteFolder(folder.id, folder.name);
-                          }}
-                          className="btn-icon delete"
-                          style={{ marginLeft: "auto", flexShrink: 0 }}
-                          title="Delete Folder"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
+                      <span>Name</span>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+                    <div>Size</div>
+                    <div>Type / Owner</div>
+                    <div style={{ textAlign: "right" }}>Actions</div>
+                  </div>
 
-          {/* COMPLETED FILES TABLE SECTION */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-            <h3 className="section-title" style={{ margin: 0 }}>Files</h3>
-            {filteredAssets.length > 0 && (
-              <button 
-                onClick={handleSelectAll} 
-                className="btn-text-select-all"
-                style={{ fontSize: "13px", color: "var(--brand-accent)", background: "none", border: "none", cursor: "pointer", fontWeight: "600", padding: "4px 8px", borderRadius: "4px" }}
-              >
-                {isAllSelected() ? "Deselect All" : "Select All"}
-              </button>
-            )}
-          </div>
+                  {/* FOLDERS LIST ROWS FIRST */}
+                  {filteredFolders.map((folder) => {
+                    const isFolderSelected = selectedFolderIds.has(folder.id);
+                    return (
+                      <div 
+                        key={folder.id} 
+                        className={`file-row ${isFolderSelected ? "selected" : ""}`}
+                        style={{ cursor: "pointer" }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          navigateToFolder(folder);
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigateToFolder(folder);
+                        }}
+                        onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
+                      >
+                        <div className="file-info">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleFolderSelection(folder.id);
+                            }}
+                            className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
+                            title={isFolderSelected ? "Deselect folder" : "Select folder"}
+                          >
+                            {isFolderSelected ? (
+                              <CheckSquare size={16} className="brand-accent" />
+                            ) : (
+                              <Square size={16} className="checkbox-unselected" />
+                            )}
+                          </button>
+                          <Folder className="folder-icon" size={18} style={{ color: "var(--accent-indigo)" }} />
+                          <span className="file-name" title={folder.name}>{folder.name}</span>
+                        </div>
 
-          {filteredAssets.length === 0 ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "180px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
-              <File size={36} style={{ marginBottom: "12px" }} />
-              <p style={{ fontSize: "14px" }}>No files uploaded here yet.</p>
+                        <div className="file-size">-</div>
+
+                        <div className="file-date">Folder</div>
+
+                        <div className="file-actions">
+                          {isAdmin && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteFolder(folder.id, folder.name);
+                              }}
+                              className="btn-icon delete"
+                              title="Delete Folder"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* FILES LIST ROWS NEXT */}
+                  {filteredAssets.map((asset) => {
+                    const isAssetSelected = selectedAssetIds.has(asset.id);
+                    return (
+                      <div 
+                        key={asset.id} 
+                        className={`file-row ${isAssetSelected ? "selected" : ""}`}
+                        onContextMenu={(e) => handleContextMenu(e, asset, "file")}
+                        style={{ cursor: "pointer" }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadFile(asset.id);
+                        }}
+                      >
+                        <div className="file-info">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleAssetSelection(asset.id);
+                            }}
+                            className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
+                            title={isAssetSelected ? "Deselect file" : "Select file"}
+                          >
+                            {isAssetSelected ? (
+                              <CheckSquare size={16} className="brand-accent" />
+                            ) : (
+                              <Square size={16} className="checkbox-unselected" />
+                            )}
+                          </button>
+                          <File className="file-icon" size={18} style={{ color: "var(--accent-blue)" }} />
+                          <span className="file-name" title={asset.filename}>{asset.filename}</span>
+                        </div>
+
+                        <div className="file-size">{formatBytes(asset.size)}</div>
+
+                        <div className="file-date" title={asset.uploadedBy || "Creator"}>{asset.uploadedBy || "Creator"}</div>
+
+                        <div className="file-actions">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadFile(asset.id);
+                            }} 
+                            className="btn-icon" 
+                            title="Download File"
+                          >
+                            <Download size={16} />
+                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteFile(asset.id);
+                              }} 
+                              className="btn-icon delete" 
+                              title="Delete File"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : (
-            <div className="files-container">
-              <div className="table-header">
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleSelectAll();
-                    }}
-                    className={`master-select-checkbox ${isAllSelected() ? "selected" : ""}`}
-                    title="Select All / None"
-                  >
-                    {isAllSelected() ? (
-                      <CheckSquare size={16} className="brand-accent" />
-                    ) : (
-                      <Square size={16} />
-                    )}
-                  </button>
-                  <span>Name</span>
+            /* ========================================================
+               2. VISUAL ICONS GRID VIEW
+               ======================================================== */
+            <div>
+              {/* Folders Grid Section */}
+              {filteredFolders.length > 0 && (
+                <div style={{ marginBottom: "32px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                    <h3 className="section-title" style={{ margin: 0 }}>Folders</h3>
+                  </div>
+                  <div className="folders-grid">
+                    {filteredFolders.map((folder) => {
+                      const isFolderSelected = selectedFolderIds.has(folder.id);
+                      return (
+                        <div 
+                          key={folder.id} 
+                          className={`folder-card ${isFolderSelected ? "selected" : ""}`}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            navigateToFolder(folder);
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigateToFolder(folder);
+                          }}
+                          onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
+                        >
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleFolderSelection(folder.id);
+                            }}
+                            className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
+                            title={isFolderSelected ? "Deselect folder" : "Select folder"}
+                          >
+                            {isFolderSelected ? (
+                              <CheckSquare size={16} className="brand-accent" />
+                            ) : (
+                              <Square size={16} className="checkbox-unselected" />
+                            )}
+                          </button>
+
+                          <Folder className="folder-icon" size={24} />
+                          <span className="folder-name">{folder.name}</span>
+                          {isAdmin && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteFolder(folder.id, folder.name);
+                              }}
+                              className="btn-icon delete"
+                              style={{ marginLeft: "auto", flexShrink: 0 }}
+                              title="Delete Folder"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>Size</div>
-                <div>Uploaded By</div>
-                <div style={{ textAlign: "right" }}>Actions</div>
+              )}
+
+              {/* Files Grid Section */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+                <h3 className="section-title" style={{ margin: 0 }}>Files</h3>
+                {filteredAssets.length > 0 && (
+                  <button 
+                    onClick={handleSelectAll} 
+                    className="btn-text-select-all"
+                    style={{ fontSize: "13px", color: "var(--brand-accent)", background: "none", border: "none", cursor: "pointer", fontWeight: "600", padding: "4px 8px", borderRadius: "4px" }}
+                  >
+                    {isAllSelected() ? "Deselect All" : "Select All"}
+                  </button>
+                )}
               </div>
 
-              {filteredAssets.map((asset) => {
-                const isAssetSelected = selectedAssetIds.has(asset.id);
-                return (
-                  <div 
-                    key={asset.id} 
-                    className={`file-row ${isAssetSelected ? "selected" : ""}`}
-                    onContextMenu={(e) => handleContextMenu(e, asset, "file")}
-                  >
-                    <div className="file-info">
-                      <button
+              {filteredFolders.length === 0 && filteredAssets.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "180px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <File size={36} style={{ marginBottom: "12px" }} />
+                  <p style={{ fontSize: "14px" }}>No folders or files found here yet.</p>
+                </div>
+              ) : filteredAssets.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "180px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <File size={36} style={{ marginBottom: "12px" }} />
+                  <p style={{ fontSize: "14px" }}>No files uploaded here yet.</p>
+                </div>
+              ) : (
+                <div className="files-grid">
+                  {filteredAssets.map((asset) => {
+                    const isAssetSelected = selectedAssetIds.has(asset.id);
+                    return (
+                      <div 
+                        key={asset.id} 
+                        className={`file-card ${isAssetSelected ? "selected" : ""}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleAssetSelection(asset.id);
                         }}
-                        className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
-                        title={isAssetSelected ? "Deselect file" : "Select file"}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadFile(asset.id);
+                        }}
+                        onContextMenu={(e) => handleContextMenu(e, asset, "file")}
                       >
-                        {isAssetSelected ? (
-                          <CheckSquare size={16} className="brand-accent" />
-                        ) : (
-                          <Square size={16} className="checkbox-unselected" />
-                        )}
-                      </button>
-                      <File className="file-icon" size={18} />
-                      <span className="file-name" title={asset.filename}>{asset.filename}</span>
-                    </div>
-
-                    <div className="file-size">{formatBytes(asset.size)}</div>
-
-                    <div className="file-date">{asset.uploadedBy || "Creator"}</div>
-
-                    <div className="file-actions">
-                      <button 
-                        onClick={() => handleDownloadFile(asset.id)} 
-                        className="btn-icon" 
-                        title="Download File"
-                      >
-                        <Download size={16} />
-                      </button>
-                      {isAdmin && (
-                        <button 
-                          onClick={() => handleDeleteFile(asset.id)} 
-                          className="btn-icon delete" 
-                          title="Delete File"
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleAssetSelection(asset.id);
+                          }}
+                          className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
+                          title={isAssetSelected ? "Deselect file" : "Select file"}
                         >
-                          <Trash2 size={16} />
+                          {isAssetSelected ? (
+                            <CheckSquare size={16} className="brand-accent" />
+                          ) : (
+                            <Square size={16} className="checkbox-unselected" />
+                          )}
                         </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+
+                        <div className="file-card-preview">
+                          <File className="file-card-icon" size={40} />
+                        </div>
+
+                        <div className="file-card-info">
+                          <span className="file-card-name" title={asset.filename}>{asset.filename}</span>
+                          <span className="file-card-meta">{formatBytes(asset.size)}</span>
+                        </div>
+
+                        <div className="file-card-actions">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownloadFile(asset.id);
+                            }} 
+                            className="btn-icon" 
+                            title="Download File"
+                          >
+                            <Download size={14} />
+                          </button>
+                          {isAdmin && (
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteFile(asset.id);
+                              }} 
+                              className="btn-icon delete" 
+                              title="Delete File"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
