@@ -16,7 +16,7 @@ import {
   HeadObjectCommand
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { eq, and, isNull, desc, inArray } from "drizzle-orm";
+import { eq, and, or, isNull, desc, inArray } from "drizzle-orm";
 import crypto from "crypto";
 
 // ==========================================
@@ -46,13 +46,15 @@ export async function listProjects() {
 // ==========================================
 
 export async function createFolder(name: string, projectId?: string, parentId?: string | null) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
+  const userId = session.user.id;
 
   const id = crypto.randomUUID();
   await db.insert(folders).values({
     id,
     projectId: projectId || null,
     parentId: parentId || null,
+    userId: userId, // Record owner for per-user My Drive isolation
     name,
   });
 
@@ -285,20 +287,39 @@ export async function listDriveContents(params: {
   projectId?: string | null;
   folderId?: string | null;
 }) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
+  const currentUserId = session.user.id;
 
   // Retrieve folders in this current view
+  const folderConditions = [
+    params.projectId ? eq(folders.projectId, params.projectId) : isNull(folders.projectId),
+    params.folderId ? eq(folders.parentId, params.folderId) : isNull(folders.parentId),
+  ];
+  if (!params.projectId) {
+    const folderOr = or(eq(folders.userId, currentUserId), isNull(folders.userId));
+    if (folderOr) {
+      folderConditions.push(folderOr);
+    }
+  }
+
   const currentFolders = await db
     .select()
     .from(folders)
-    .where(
-      and(
-        params.projectId ? eq(folders.projectId, params.projectId) : isNull(folders.projectId),
-        params.folderId ? eq(folders.parentId, params.folderId) : isNull(folders.parentId)
-      )
-    );
+    .where(and(...folderConditions));
 
   // Retrieve completed files in this current view
+  const assetConditions = [
+    params.projectId ? eq(assets.projectId, params.projectId) : isNull(assets.projectId),
+    params.folderId ? eq(assets.folderId, params.folderId) : isNull(assets.folderId),
+    eq(assets.status, "completed"),
+  ];
+  if (!params.projectId) {
+    const assetOr = or(eq(assets.uploadedBy, currentUserId), isNull(assets.uploadedBy));
+    if (assetOr) {
+      assetConditions.push(assetOr);
+    }
+  }
+
   const currentAssets = await db
     .select({
       id: assets.id,
@@ -311,13 +332,7 @@ export async function listDriveContents(params: {
     })
     .from(assets)
     .leftJoin(user, eq(assets.uploadedBy, user.id))
-    .where(
-      and(
-        params.projectId ? eq(assets.projectId, params.projectId) : isNull(assets.projectId),
-        params.folderId ? eq(assets.folderId, params.folderId) : isNull(assets.folderId),
-        eq(assets.status, "completed")
-      )
-    )
+    .where(and(...assetConditions))
     .orderBy(desc(assets.uploadedAt));
 
   return { folders: currentFolders, assets: currentAssets };
@@ -1023,6 +1038,7 @@ export async function bulkCopyItems(params: {
         id: topVirtualFolderId,
         parentId: destFolderId,
         projectId: targetProjId,
+        userId: userId, // Keep private to the current user in My Drive
         name: folderName,
       });
 
@@ -1064,6 +1080,7 @@ export async function bulkCopyItems(params: {
               id: newFolderId,
               parentId: currentParentId,
               projectId: targetProjId,
+              userId: userId, // Keep private to the current user in My Drive
               name: segment,
             });
             folderIdMap.set(currentPathPrefix, newFolderId);
@@ -1171,6 +1188,7 @@ export async function bulkCopyItems(params: {
       id: newFolderId,
       parentId: destinationParentId,
       projectId: targetProjId,
+      userId: userId, // Keep private to the current user in My Drive
       name: `${folder.name} (Copy)`,
     });
 
