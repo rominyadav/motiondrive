@@ -804,7 +804,8 @@
 .new-dropdown-menu {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
+  right: 0;
+  left: auto;
   min-width: 220px;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -947,4 +948,538 @@
 
 .spreadsheet-table td input::placeholder {
   color: var(--text-muted);
+}
+
+/* ==========================================
+   MOBILE & RESPONSIVE STYLES
+   ========================================== */
+
+/* Mobile Top Header - Hidden on Desktop */
+.mobile-top-header {
+  display: none;
+  height: 64px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 20px;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.mobile-menu-btn {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color var(--transition-fast);
+}
+
+.mobile-menu-btn:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.mobile-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--text-primary);
+}
+
+.mobile-user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gradient-brand);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Mobile Sidebar Backdrop */
+.sidebar-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.sidebar-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ==========================================
+   INTERACTIVE MULTI-SELECT CHECKBOXES
+   ========================================== */
+
+/* Checkbox Button styles */
+.item-select-checkbox {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color var(--transition-fast), transform var(--transition-fast);
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.item-select-checkbox svg {
+  stroke-width: 2.2px;
+}
+
+.item-select-checkbox:hover {
+  color: var(--brand-accent);
+  transform: scale(1.05);
+}
+
+.checkbox-unselected {
+  color: var(--text-muted);
+  opacity: 0.4;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+/* Folder Card and File Row checkbox interaction rules */
+.folder-card {
+  position: relative;
+  overflow: hidden;
+  padding-left: 12px;
+}
+
+/* Hide checkbox by default on desktop, reveal on card hover or selection */
+@media (min-width: 769px) {
+  .folder-card .item-select-checkbox,
+  .file-row .item-select-checkbox {
+    opacity: 0;
+    width: 0;
+    margin-right: 0;
+    overflow: hidden;
+    transition: opacity 0.2s ease, width 0.2s ease, margin 0.2s ease;
+  }
+
+  .folder-card:hover .item-select-checkbox,
+  .folder-card.selected .item-select-checkbox,
+  .file-row:hover .item-select-checkbox,
+  .file-row.selected .item-select-checkbox {
+    opacity: 1;
+    width: 18px;
+    margin-right: 12px;
+  }
+}
+
+/* Highlight selected folders and files */
+.folder-card.selected {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+  border-color: rgba(99, 102, 241, 0.4) !important;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.1) !important;
+}
+
+.file-row.selected {
+  background-color: rgba(99, 102, 241, 0.08) !important;
+  border-color: rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Master Select Checkbox inside table header */
+.master-select-checkbox {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.master-select-checkbox:hover {
+  color: var(--brand-accent);
+}
+
+/* ==========================================
+   FLOATING MULTI-ACTION TOOLBAR
+   ========================================== */
+.floating-bulk-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(22, 24, 33, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg), 0 0 30px rgba(99, 102, 241, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 100;
+  padding: 12px 24px;
+  width: max-content;
+  max-width: 90vw;
+  animation: fadeInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.bulk-bar-content {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.bulk-selection-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  border-right: 1px solid var(--border-color);
+  padding-right: 20px;
+}
+
+.count-badge {
+  background: var(--gradient-brand);
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 12px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.bulk-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Bulk actions buttons styling */
+.btn-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-bulk:hover {
+  background-color: var(--bg-secondary);
+  transform: translateY(-1px);
+}
+
+.btn-bulk-copy:hover {
+  color: var(--accent-indigo);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.btn-bulk-move:hover {
+  color: var(--brand-accent);
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.btn-bulk-delete {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+.btn-bulk-delete:hover {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.bulk-bar-divider {
+  height: 20px;
+  width: 1px;
+  background-color: var(--border-color);
+}
+
+.bulk-bar-close {
+  color: var(--text-secondary);
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+
+.bulk-bar-close:hover {
+  color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+/* ==========================================
+   DESTINATION PICKER TREE MODAL
+   ========================================== */
+.picker-modal {
+  background-color: var(--bg-secondary) !important;
+  box-shadow: var(--shadow-lg), 0 0 40px rgba(0, 0, 0, 0.4) !important;
+}
+
+.picker-dir-row:hover {
+  background-color: var(--bg-secondary) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.picker-breadcrumb-item:hover {
+  color: var(--brand-accent) !important;
+}
+
+.picker-breadcrumb-item.active {
+  color: var(--brand-accent) !important;
+  pointer-events: none;
+}
+
+/* ==========================================
+   MEDIA QUERY BREAKPOINTS
+   ========================================== */
+
+/* Large Tablets & Small Desktops (<= 1024px) */
+@media (max-width: 1024px) {
+  .app-container {
+    grid-template-columns: 240px 1fr;
+  }
+  
+  .sidebar {
+    width: 240px;
+  }
+
+  .folders-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+}
+
+/* Mobile Devices & Tablets (<= 768px) */
+@media (max-width: 768px) {
+  /* Restructure main container to a single column list */
+  .app-container {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: none;
+    height: 100vh;
+  }
+
+  /* Show top header bar on mobile */
+  .mobile-top-header {
+    display: flex;
+    flex-shrink: 0;
+  }
+
+  /* Convert sidebar to a sliding overlay drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    z-index: 100;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 20px 0 30px rgba(0, 0, 0, 0.5);
+    background-color: var(--bg-secondary);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  /* Main content adjust for sticky mobile header */
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  /* Shrink page header and shift elements */
+  .header {
+    height: auto;
+    border-bottom: none;
+    padding: 0;
+    margin-bottom: 16px;
+  }
+
+  .search-bar-container {
+    max-width: 100%;
+    margin-top: 4px;
+  }
+
+  /* Reduce margins and sizing */
+  .explorer {
+    margin-top: 8px;
+  }
+
+  .explorer-header {
+    margin-bottom: 16px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .explorer-title {
+    font-size: 20px;
+  }
+
+  .breadcrumbs {
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  /* Responsive Grids and Tables */
+  .folders-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .folder-card {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .folder-card .item-select-checkbox {
+    width: 18px;
+    margin-right: 4px;
+  }
+
+  /* File list row conversion on mobile */
+  .files-container {
+    background: none;
+    border: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .table-header {
+    display: none; /* Hide header completely on mobile to save space */
+  }
+
+  .file-row {
+    grid-template-columns: 1fr auto;
+    padding: 14px;
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    gap: 8px;
+    position: relative;
+  }
+
+  /* Stack meta information inside the row */
+  .file-info {
+    grid-column: 1;
+  }
+
+  .file-size {
+    grid-column: 1;
+    padding-left: 30px; /* offset to align with filename */
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .file-date {
+    display: none; /* Hide uploader text inside row to keep layout light */
+  }
+
+  .file-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Checkbox persistently visible on mobile and touch devices */
+  .folder-card .item-select-checkbox,
+  .file-row .item-select-checkbox {
+    opacity: 1;
+    width: 18px;
+    margin-right: 8px;
+  }
+
+  /* Tighten bulk actions bar on mobile */
+  .floating-bulk-bar {
+    width: 92vw;
+    bottom: 16px;
+    padding: 10px 16px;
+    border-radius: 14px;
+  }
+
+  .bulk-bar-content {
+    gap: 12px;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .bulk-selection-count {
+    padding-right: 8px;
+    gap: 6px;
+    border: none;
+    font-size: 12px;
+  }
+
+  .bulk-bar-actions {
+    gap: 6px;
+  }
+
+  .btn-bulk {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 12px;
+    border-radius: 8px;
+    gap: 4px;
+  }
+
+  .btn-bulk span {
+    display: none; /* Icon-only on small mobile screens */
+  }
+
+  .bulk-bar-divider {
+    height: 14px;
+  }
+}
+
+/* Micro-animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }

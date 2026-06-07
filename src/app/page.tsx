@@ -22,7 +22,10 @@ import {
   renameAsset,
   renameFolder,
   renameSharedAsset,
-  renameSharedFolder
+  renameSharedFolder,
+  bulkDeleteItems,
+  bulkMoveItems,
+  bulkCopyItems
 } from "@/app/actions/drive";
 import { 
   Folder, 
@@ -48,7 +51,13 @@ import {
   FileText,
   FolderUp,
   Upload,
-  Table
+  Table,
+  Menu,
+  X,
+  CheckSquare,
+  Square,
+  FolderInput,
+  Copy
 } from "lucide-react";
 import Link from "next/link";
 import "./drive.css";
@@ -110,6 +119,21 @@ export default function DrivePage() {
 
   // Toast / Notification State
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Mobile Sidebar & Collapsibility State
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Bulk Selection States
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
+  const [selectedFolderIds, setSelectedFolderIds] = useState<Set<string>>(new Set());
+
+  // Destination Folder Picker Modal State
+  const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
+  const [pickerAction, setPickerAction] = useState<"move" | "copy" | null>(null);
+  const [pickerCurrentFolderId, setPickerCurrentFolderId] = useState<string | null>(null); // UUID (personal) or Prefix Path (shared)
+  const [pickerFolderPath, setPickerFolderPath] = useState<{ id: string | null; name: string }[]>([]);
+  const [pickerFolders, setPickerFolders] = useState<any[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
 
   // New Dropdown State
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
@@ -613,6 +637,266 @@ export default function DrivePage() {
   };
 
   // ==========================================
+  // BULK SELECTION & OPERATIONS HANDLERS
+  // ==========================================
+
+  // Toggle selection for an Asset
+  const handleToggleAssetSelection = (assetId: string) => {
+    setSelectedAssetIds(prev => {
+      const next = new Set(prev);
+      if (next.has(assetId)) {
+        next.delete(assetId);
+      } else {
+        next.add(assetId);
+      }
+      return next;
+    });
+  };
+
+  // Toggle selection for a Folder
+  const handleToggleFolderSelection = (folderId: string) => {
+    setSelectedFolderIds(prev => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+
+  // Clear Selection
+  const handleClearSelection = () => {
+    setSelectedAssetIds(new Set());
+    setSelectedFolderIds(new Set());
+  };
+
+  // Check if all viewed items are selected
+  const isAllSelected = () => {
+    if (folders.length === 0 && assets.length === 0) return false;
+    const allFoldersSelected = folders.every(f => selectedFolderIds.has(f.id));
+    const allAssetsSelected = assets.every(a => selectedAssetIds.has(a.id));
+    return allFoldersSelected && allAssetsSelected;
+  };
+
+  // Handle "Select All" toggle
+  const handleSelectAll = () => {
+    if (isAllSelected()) {
+      // Deselect all
+      setSelectedFolderIds(prev => {
+        const next = new Set(prev);
+        folders.forEach(f => next.delete(f.id));
+        return next;
+      });
+      setSelectedAssetIds(prev => {
+        const next = new Set(prev);
+        assets.forEach(a => next.delete(a.id));
+        return next;
+      });
+    } else {
+      // Select all in current view
+      setSelectedFolderIds(prev => {
+        const next = new Set(prev);
+        folders.forEach(f => next.add(f.id));
+        return next;
+      });
+      setSelectedAssetIds(prev => {
+        const next = new Set(prev);
+        assets.forEach(a => next.add(a.id));
+        return next;
+      });
+    }
+  };
+
+  // Execute bulk deletion
+  const handleBulkDelete = async () => {
+    const totalCount = selectedAssetIds.size + selectedFolderIds.size;
+    if (totalCount === 0) return;
+
+    if (!confirm(`Are you sure you want to permanently delete the ${totalCount} selected item(s) from the Web Drive and Cloudflare R2? This action cannot be undone.`)) return;
+
+    setLoading(true);
+    try {
+      const isShared = explorerMode === "shared";
+      await bulkDeleteItems({
+        assetIds: Array.from(selectedAssetIds),
+        folderIds: Array.from(selectedFolderIds),
+        isSharedDrive: isShared
+      });
+
+      handleClearSelection();
+      await refreshExplorerContents();
+      setToastMessage("Selected items deleted successfully!");
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error("Bulk delete failed", err);
+      alert("Failed to delete selected items");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load folders for destination picker
+  const handleLoadPickerDirectories = async (folderId: string | null, projectId: string | null) => {
+    setPickerLoading(true);
+    try {
+      const isShared = explorerMode === "shared";
+      if (isShared) {
+        // Shared Drive: List physical folders under target prefix (folderId is the prefix path string)
+        const prefix = folderId || "";
+        const { folders: loaded } = await listSharedDriveContents(prefix);
+        setPickerFolders(loaded);
+      } else {
+        // Personal Drive: List virtual DB folders
+        if (folderId === null && projectId === null) {
+          const projs = await listProjects();
+          // Map projects to look like folders
+          const mapped = projs.map(p => ({
+            id: `PROJECT:${p.id}`,
+            name: p.name,
+            projectId: p.id,
+            isProject: true
+          }));
+          setPickerFolders(mapped);
+        } else {
+          const { folders: loaded } = await listDriveContents({
+            projectId: projectId,
+            folderId: folderId
+          });
+          setPickerFolders(loaded);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load directories for picker", err);
+    } finally {
+      setPickerLoading(false);
+    }
+  };
+
+  // Open Destination Picker Modal
+  const handleOpenDestinationPicker = async (action: "move" | "copy") => {
+    setPickerAction(action);
+    setPickerCurrentFolderId(null);
+    setPickerFolderPath([]);
+    setDestinationPickerOpen(true);
+    await handleLoadPickerDirectories(null, null);
+  };
+
+  // Click handler to dive into a subdirectory in picker
+  const handlePickerNavigate = async (item: any) => {
+    const isShared = explorerMode === "shared";
+    if (isShared) {
+      const targetPrefix = item.id;
+      setPickerCurrentFolderId(targetPrefix);
+      setPickerFolderPath(prev => [...prev, { id: targetPrefix, name: item.name }]);
+      await handleLoadPickerDirectories(targetPrefix, null);
+    } else {
+      if (item.isProject) {
+        const projId = item.projectId;
+        setPickerCurrentFolderId(null);
+        setPickerFolderPath([{ id: `PROJECT:${projId}`, name: item.name }]);
+        await handleLoadPickerDirectories(null, projId);
+      } else {
+        const firstSegment = pickerFolderPath[0];
+        const projId = firstSegment && firstSegment.id?.startsWith("PROJECT:") 
+          ? firstSegment.id.substring(8) 
+          : null;
+
+        setPickerCurrentFolderId(item.id);
+        setPickerFolderPath(prev => [...prev, { id: item.id, name: item.name }]);
+        await handleLoadPickerDirectories(item.id, projId);
+      }
+    }
+  };
+
+  // Picker Breadcrumb Navigation
+  const handlePickerBreadcrumbClick = async (index: number) => {
+    const isShared = explorerMode === "shared";
+    if (index === -1) {
+      setPickerCurrentFolderId(null);
+      setPickerFolderPath([]);
+      await handleLoadPickerDirectories(null, null);
+    } else {
+      const segment = pickerFolderPath[index];
+      const newPath = pickerFolderPath.slice(0, index + 1);
+      setPickerFolderPath(newPath);
+
+      if (isShared) {
+        setPickerCurrentFolderId(segment.id);
+        await handleLoadPickerDirectories(segment.id, null);
+      } else {
+        if (segment.id?.startsWith("PROJECT:")) {
+          const projId = segment.id.substring(8);
+          setPickerCurrentFolderId(null);
+          await handleLoadPickerDirectories(null, projId);
+        } else {
+          const firstSegment = newPath[0];
+          const projId = firstSegment && firstSegment.id?.startsWith("PROJECT:") 
+            ? firstSegment.id.substring(8) 
+            : null;
+          setPickerCurrentFolderId(segment.id);
+          await handleLoadPickerDirectories(segment.id, projId);
+        }
+      }
+    }
+  };
+
+  // Execute Bulk Copy / Move
+  const handleExecutePickerAction = async () => {
+    if (!pickerAction) return;
+
+    setLoading(true);
+    setDestinationPickerOpen(false);
+
+    try {
+      const isShared = explorerMode === "shared";
+      let targetFolderId: string | null = null;
+      let targetProjectId: string | null = null;
+
+      if (isShared) {
+        targetFolderId = pickerCurrentFolderId;
+      } else {
+        targetFolderId = pickerCurrentFolderId;
+        const firstSegment = pickerFolderPath[0];
+        if (firstSegment && firstSegment.id?.startsWith("PROJECT:")) {
+          targetProjectId = firstSegment.id.substring(8);
+        }
+      }
+
+      if (pickerAction === "move") {
+        await bulkMoveItems({
+          assetIds: Array.from(selectedAssetIds),
+          folderIds: Array.from(selectedFolderIds),
+          targetFolderId,
+          targetProjectId,
+          isSharedDrive: isShared
+        });
+        setToastMessage("Items moved successfully!");
+      } else if (pickerAction === "copy") {
+        await bulkCopyItems({
+          assetIds: Array.from(selectedAssetIds),
+          folderIds: Array.from(selectedFolderIds),
+          targetFolderId,
+          targetProjectId,
+          isSharedDrive: isShared
+        });
+        setToastMessage("Items copied successfully!");
+      }
+
+      handleClearSelection();
+      await refreshExplorerContents();
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error(`Bulk ${pickerAction} failed`, err);
+      alert(`Failed to ${pickerAction} selected items`);
+    } finally {
+      setLoading(false);
+      setPickerAction(null);
+    }
+  };
+
+  // ==========================================
   // MODULAR CORE UPLOAD & FOLDER RECREATOR
   // ==========================================
 
@@ -1092,18 +1376,24 @@ export default function DrivePage() {
 
   return (
     <div className="app-container">
+      {/* SIDEBAR BACKDROP FOR MOBILE */}
+      {sidebarOpen && (
+        <div className="sidebar-backdrop show" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* SIDEBAR NAVIGATION */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
         <div className="brand">
           <LayoutGrid size={24} className="brand-accent" />
           <span>Motionsewa <span className="brand-accent">Drive</span></span>
         </div>
 
-
-
         <nav className="nav-links">
           <button 
-            onClick={() => selectProject(null, "My Drive")} 
+            onClick={() => {
+              selectProject(null, "My Drive");
+              setSidebarOpen(false);
+            }} 
             className={`nav-link ${explorerMode === "personal" && selectedProjectId === null ? "active" : ""}`}
           >
             <LayoutGrid size={18} />
@@ -1111,7 +1401,10 @@ export default function DrivePage() {
           </button>
 
           <button 
-            onClick={selectSharedDrive} 
+            onClick={() => {
+              selectSharedDrive();
+              setSidebarOpen(false);
+            }} 
             className={`nav-link ${explorerMode === "shared" ? "active" : ""}`}
           >
             <Share2 size={18} />
@@ -1121,7 +1414,14 @@ export default function DrivePage() {
           <div style={{ marginTop: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "8px" }}>
               <span className="section-title" style={{ margin: 0, fontSize: "11px" }}>Projects</span>
-              <button onClick={() => setProjectModalOpen(true)} title="New Project" className="btn-icon">
+              <button 
+                onClick={() => {
+                  setProjectModalOpen(true);
+                  setSidebarOpen(false);
+                }} 
+                title="New Project" 
+                className="btn-icon"
+              >
                 <Plus size={14} />
               </button>
             </div>
@@ -1129,7 +1429,10 @@ export default function DrivePage() {
             {projects.map((proj) => (
               <button 
                 key={proj.id}
-                onClick={() => selectProject(proj.id, proj.name)}
+                onClick={() => {
+                  selectProject(proj.id, proj.name);
+                  setSidebarOpen(false);
+                }}
                 className={`nav-link ${explorerMode === "personal" && selectedProjectId === proj.id ? "active" : ""}`}
                 style={{ paddingLeft: "24px" }}
               >
@@ -1140,7 +1443,12 @@ export default function DrivePage() {
           </div>
 
           {isAdmin && (
-            <Link href="/admin" className="nav-link" style={{ marginTop: "24px" }}>
+            <Link 
+              href="/admin" 
+              className="nav-link" 
+              style={{ marginTop: "24px" }}
+              onClick={() => setSidebarOpen(false)}
+            >
               <Sliders size={18} />
               <span>Admin Panel</span>
             </Link>
@@ -1162,6 +1470,24 @@ export default function DrivePage() {
 
       {/* MAIN CONTENT EXPLORER */}
       <main className="main-content">
+        {/* MOBILE TOP HEADER BAR */}
+        <div className="mobile-top-header">
+          <button 
+            onClick={() => setSidebarOpen(true)} 
+            className="mobile-menu-btn" 
+            title="Open Menu"
+          >
+            <Menu size={24} />
+          </button>
+          <div className="mobile-brand">
+            <LayoutGrid size={20} className="brand-accent" />
+            <span>Motionsewa <span className="brand-accent">Drive</span></span>
+          </div>
+          <div className="mobile-user-avatar">
+            {session?.user?.name?.charAt(0) || "U"}
+          </div>
+        </div>
+
         <header className="header">
           <div className="search-bar-container">
             <Search size={18} />
@@ -1314,37 +1640,73 @@ export default function DrivePage() {
             <div style={{ marginBottom: "32px" }}>
               <h3 className="section-title">Folders</h3>
               <div className="folders-grid">
-                {folders.map((folder) => (
-                  <div 
-                    key={folder.id} 
-                    className="folder-card"
-                    onDoubleClick={() => navigateToFolder(folder)}
-                    onClick={() => navigateToFolder(folder)}
-                    onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
-                  >
-                    <Folder className="folder-icon" size={24} />
-                    <span className="folder-name">{folder.name}</span>
-                    {isAdmin && (
+                {folders.map((folder) => {
+                  const isFolderSelected = selectedFolderIds.has(folder.id);
+                  return (
+                    <div 
+                      key={folder.id} 
+                      className={`folder-card ${isFolderSelected ? "selected" : ""}`}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        navigateToFolder(folder);
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigateToFolder(folder);
+                      }}
+                      onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
+                    >
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteFolder(folder.id, folder.name);
+                          handleToggleFolderSelection(folder.id);
                         }}
-                        className="btn-icon delete"
-                        style={{ marginLeft: "auto", flexShrink: 0 }}
-                        title="Delete Folder"
+                        className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
+                        title={isFolderSelected ? "Deselect folder" : "Select folder"}
                       >
-                        <Trash2 size={16} />
+                        {isFolderSelected ? (
+                          <CheckSquare size={16} className="brand-accent" />
+                        ) : (
+                          <Square size={16} className="checkbox-unselected" />
+                        )}
                       </button>
-                    )}
-                  </div>
-                ))}
+
+                      <Folder className="folder-icon" size={24} />
+                      <span className="folder-name">{folder.name}</span>
+                      {isAdmin && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFolder(folder.id, folder.name);
+                          }}
+                          className="btn-icon delete"
+                          style={{ marginLeft: "auto", flexShrink: 0 }}
+                          title="Delete Folder"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
 
           {/* COMPLETED FILES TABLE SECTION */}
-          <h3 className="section-title">Files</h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
+            <h3 className="section-title" style={{ margin: 0 }}>Files</h3>
+            {filteredAssets.length > 0 && (
+              <button 
+                onClick={handleSelectAll} 
+                className="btn-text-select-all"
+                style={{ fontSize: "13px", color: "var(--brand-accent)", background: "none", border: "none", cursor: "pointer", fontWeight: "600", padding: "4px 8px", borderRadius: "4px" }}
+              >
+                {isAllSelected() ? "Deselect All" : "Select All"}
+              </button>
+            )}
+          </div>
+
           {filteredAssets.length === 0 ? (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "180px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
               <File size={36} style={{ marginBottom: "12px" }} />
@@ -1353,47 +1715,80 @@ export default function DrivePage() {
           ) : (
             <div className="files-container">
               <div className="table-header">
-                <div>Name</div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectAll();
+                    }}
+                    className={`master-select-checkbox ${isAllSelected() ? "selected" : ""}`}
+                    title="Select All / None"
+                  >
+                    {isAllSelected() ? (
+                      <CheckSquare size={16} className="brand-accent" />
+                    ) : (
+                      <Square size={16} />
+                    )}
+                  </button>
+                  <span>Name</span>
+                </div>
                 <div>Size</div>
                 <div>Uploaded By</div>
                 <div style={{ textAlign: "right" }}>Actions</div>
               </div>
 
-              {filteredAssets.map((asset) => (
-                <div 
-                  key={asset.id} 
-                  className="file-row"
-                  onContextMenu={(e) => handleContextMenu(e, asset, "file")}
-                >
-                  <div className="file-info">
-                    <File className="file-icon" size={18} />
-                    <span className="file-name" title={asset.filename}>{asset.filename}</span>
-                  </div>
-
-                  <div className="file-size">{formatBytes(asset.size)}</div>
-
-                  <div className="file-date">{asset.uploadedBy || "Creator"}</div>
-
-                  <div className="file-actions">
-                    <button 
-                      onClick={() => handleDownloadFile(asset.id)} 
-                      className="btn-icon" 
-                      title="Download File"
-                    >
-                      <Download size={16} />
-                    </button>
-                    {isAdmin && (
-                      <button 
-                        onClick={() => handleDeleteFile(asset.id)} 
-                        className="btn-icon delete" 
-                        title="Delete File"
+              {filteredAssets.map((asset) => {
+                const isAssetSelected = selectedAssetIds.has(asset.id);
+                return (
+                  <div 
+                    key={asset.id} 
+                    className={`file-row ${isAssetSelected ? "selected" : ""}`}
+                    onContextMenu={(e) => handleContextMenu(e, asset, "file")}
+                  >
+                    <div className="file-info">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleAssetSelection(asset.id);
+                        }}
+                        className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
+                        title={isAssetSelected ? "Deselect file" : "Select file"}
                       >
-                        <Trash2 size={16} />
+                        {isAssetSelected ? (
+                          <CheckSquare size={16} className="brand-accent" />
+                        ) : (
+                          <Square size={16} className="checkbox-unselected" />
+                        )}
                       </button>
-                    )}
+                      <File className="file-icon" size={18} />
+                      <span className="file-name" title={asset.filename}>{asset.filename}</span>
+                    </div>
+
+                    <div className="file-size">{formatBytes(asset.size)}</div>
+
+                    <div className="file-date">{asset.uploadedBy || "Creator"}</div>
+
+                    <div className="file-actions">
+                      <button 
+                        onClick={() => handleDownloadFile(asset.id)} 
+                        className="btn-icon" 
+                        title="Download File"
+                      >
+                        <Download size={16} />
+                      </button>
+                      {isAdmin && (
+                        <button 
+                          onClick={() => handleDeleteFile(asset.id)} 
+                          className="btn-icon delete" 
+                          title="Delete File"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -2022,6 +2417,182 @@ export default function DrivePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING SELECTION / BULK ACTIONS BAR */}
+      {(selectedAssetIds.size > 0 || selectedFolderIds.size > 0) && (
+        <div className="floating-bulk-bar animate-fade-in-up">
+          <div className="bulk-bar-content">
+            <div className="bulk-selection-count">
+              <span className="count-badge">
+                {selectedAssetIds.size + selectedFolderIds.size}
+              </span>
+              <span>item(s) selected</span>
+            </div>
+
+            <div className="bulk-bar-actions">
+              <button 
+                onClick={() => handleOpenDestinationPicker("copy")}
+                className="btn-bulk btn-bulk-copy"
+                title="Copy selected items to a folder"
+              >
+                <Copy size={16} />
+                <span>Copy</span>
+              </button>
+
+              <button 
+                onClick={() => handleOpenDestinationPicker("move")}
+                className="btn-bulk btn-bulk-move"
+                title="Move selected items to a folder"
+              >
+                <FolderInput size={16} />
+                <span>Move</span>
+              </button>
+
+              {isAdmin && (
+                <button 
+                  onClick={handleBulkDelete}
+                  className="btn-bulk btn-bulk-delete"
+                  title="Permanently delete selected items"
+                >
+                  <Trash2 size={16} />
+                  <span>Delete</span>
+                </button>
+              )}
+
+              <div className="bulk-bar-divider" />
+
+              <button 
+                onClick={handleClearSelection}
+                className="btn-icon bulk-bar-close"
+                title="Clear Selection"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DESTINATION PICKER MODAL */}
+      {destinationPickerOpen && (
+        <div className="modal-overlay" onClick={() => setDestinationPickerOpen(false)}>
+          <div className="modal picker-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "560px", width: "90vw" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <FolderInput size={22} className="brand-accent" />
+                <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
+                  Select Destination for {pickerAction === "copy" ? "Copy" : "Move"}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setDestinationPickerOpen(false)}
+                className="btn-icon"
+                title="Close Destination Picker"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Picker Breadcrumbs */}
+            <div className="picker-breadcrumbs" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px", marginBottom: "16px", padding: "8px 12px", background: "var(--bg-primary)", borderRadius: "8px", border: "1px solid var(--border-color)", fontSize: "13px" }}>
+              <span 
+                className={`picker-breadcrumb-item ${pickerFolderPath.length === 0 ? "active" : ""}`}
+                style={{ cursor: "pointer", color: pickerFolderPath.length === 0 ? "var(--brand-accent)" : "var(--text-secondary)", fontWeight: "500" }}
+                onClick={() => handlePickerBreadcrumbClick(-1)}
+              >
+                {explorerMode === "shared" ? "Shared Drive" : "My Drive"}
+              </span>
+              {pickerFolderPath.map((item, index) => (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <ChevronRight size={14} style={{ opacity: 0.5 }} />
+                  <span 
+                    className={`picker-breadcrumb-item ${index === pickerFolderPath.length - 1 ? "active" : ""}`}
+                    style={{ cursor: "pointer", color: index === pickerFolderPath.length - 1 ? "var(--brand-accent)" : "var(--text-secondary)", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}
+                    onClick={() => handlePickerBreadcrumbClick(index)}
+                  >
+                    {item.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Picker Directories List */}
+            <div className="picker-dir-container" style={{ minHeight: "260px", maxHeight: "380px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "8px", backgroundColor: "var(--bg-primary)", padding: "8px" }}>
+              {pickerLoading ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", gap: "12px" }}>
+                  <Loader2 className="animate-spin brand-accent" size={28} />
+                  <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Loading directories...</span>
+                </div>
+              ) : pickerFolders.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", color: "var(--text-muted)", gap: "8px" }}>
+                  <FolderOpen size={36} style={{ opacity: 0.4 }} />
+                  <span style={{ fontSize: "14px" }}>No folders in this directory</span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {pickerFolders.map((folder) => (
+                    <button
+                      key={folder.id}
+                      onClick={() => handlePickerNavigate(folder)}
+                      className="picker-dir-row"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        width: "100%",
+                        padding: "10px 12px",
+                        background: "none",
+                        border: "none",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                        color: "var(--text-primary)",
+                        textAlign: "left",
+                        gap: "10px",
+                        transition: "background 0.2s"
+                      }}
+                    >
+                      <Folder size={18} style={{ color: "var(--brand-accent)", flexShrink: 0 }} />
+                      <span style={{ fontSize: "14px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {folder.name}
+                      </span>
+                      <ChevronRight size={14} style={{ opacity: 0.5 }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Target Display and Triggers */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-color)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxWidth: "60%" }}>
+                <span style={{ fontSize: "11px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Target Destination:</span>
+                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {pickerFolderPath.length === 0 
+                    ? (explorerMode === "shared" ? "Shared Drive root" : "My Drive (root)")
+                    : pickerFolderPath[pickerFolderPath.length - 1].name
+                  }
+                </span>
+              </div>
+              <div style={{ display: "flex", gap: "12px" }}>
+                <button 
+                  type="button" 
+                  onClick={() => setDestinationPickerOpen(false)} 
+                  className="btn-secondary"
+                  style={{ height: "38px" }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleExecutePickerAction}
+                  className="btn-primary"
+                  style={{ height: "38px", padding: "0 20px" }}
+                >
+                  {pickerAction === "copy" ? "Copy Here" : "Move Here"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

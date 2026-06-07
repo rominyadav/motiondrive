@@ -563,3 +563,371 @@ export async function renameSharedFolder(oldPrefix: string, newPrefix: string) {
 
   return { success: true };
 }
+
+// ==========================================
+// BULK / MULTI-SELECT DRIVE OPERATIONS
+// ==========================================
+
+export async function bulkDeleteItems(params: {
+  assetIds: string[];
+  folderIds: string[];
+  isSharedDrive?: boolean;
+}) {
+  await requireApprovedUser();
+
+  if (params.isSharedDrive) {
+    // Shared Drive deletion (direct S3 physical paths)
+    // 1. Delete files
+    for (const key of params.assetIds) {
+      const command = new DeleteObjectCommand({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        Key: key,
+      });
+      await r2Client.send(command);
+    }
+    // 2. Delete folders recursively (by prefix)
+    for (const prefix of params.folderIds) {
+      const listCommand = new ListObjectsV2Command({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        Prefix: prefix,
+      });
+      const response = await r2Client.send(listCommand);
+      const objects = response.Contents || [];
+      for (const obj of objects) {
+        if (obj.Key) {
+          const deleteCommand = new DeleteObjectCommand({
+            Bucket: R2_SHARED_BUCKET_NAME,
+            Key: obj.Key,
+          });
+          await r2Client.send(deleteCommand);
+        }
+      }
+    }
+    return { success: true };
+  }
+
+  // Personal Drive deletion (Database index cascading)
+  const allFolderIdsToDelete = [...params.folderIds];
+
+  async function getAllSubfolderIds(fId: string): Promise<string[]> {
+    const subfolders = await db
+      .select({ id: folders.id })
+      .from(folders)
+      .where(eq(folders.parentId, fId));
+
+    let ids = subfolders.map((sf) => sf.id);
+    for (const subId of ids) {
+      const nestedIds = await getAllSubfolderIds(subId);
+      ids = ids.concat(nestedIds);
+    }
+    return ids;
+  }
+
+  for (const fId of params.folderIds) {
+    const nested = await getAllSubfolderIds(fId);
+    allFolderIdsToDelete.push(...nested);
+  }
+
+  // Remove duplicates
+  const uniqueFolderIds = Array.from(new Set(allFolderIdsToDelete));
+
+  // Gather all assets belonging to these folders, plus individual assetIds
+  let assetsToDelete: { id: string; r2Key: string }[] = [];
+
+  if (uniqueFolderIds.length > 0) {
+    const folderAssets = await db
+      .select({ id: assets.id, r2Key: assets.r2Key })
+      .from(assets)
+      .where(inArray(assets.folderId, uniqueFolderIds));
+    assetsToDelete = assetsToDelete.concat(folderAssets);
+  }
+
+  if (params.assetIds.length > 0) {
+    const individualAssets = await db
+      .select({ id: assets.id, r2Key: assets.r2Key })
+      .from(assets)
+      .where(inArray(assets.id, params.assetIds));
+    assetsToDelete = assetsToDelete.concat(individualAssets);
+  }
+
+  // Remove duplicate asset records to prevent double R2 deletes
+  const seenAssetIds = new Set<string>();
+  const uniqueAssetsToDelete = assetsToDelete.filter((item) => {
+    if (seenAssetIds.has(item.id)) return false;
+    seenAssetIds.add(item.id);
+    return true;
+  });
+
+  // Delete all identified assets from Cloudflare R2
+  for (const asset of uniqueAssetsToDelete) {
+    try {
+      const command = new DeleteObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: asset.r2Key,
+      });
+      await r2Client.send(command);
+    } catch (error) {
+      console.error(`Failed to delete asset ${asset.id} from R2 during bulk delete:`, error);
+    }
+  }
+
+  // Delete from DB: assets records cascade delete automatically with folders,
+  // but we delete individual assets explicitly too
+  if (params.assetIds.length > 0) {
+    await db.delete(assets).where(inArray(assets.id, params.assetIds));
+  }
+  if (uniqueFolderIds.length > 0) {
+    await db.delete(folders).where(inArray(folders.id, uniqueFolderIds));
+  }
+
+  return { success: true };
+}
+
+export async function bulkMoveItems(params: {
+  assetIds: string[];
+  folderIds: string[];
+  targetFolderId: string | null;
+  targetProjectId?: string | null;
+  isSharedDrive?: boolean;
+}) {
+  await requireApprovedUser();
+
+  if (params.isSharedDrive) {
+    // S3 moving (copy to targetPrefix + name, delete from source)
+    const targetPrefix = params.targetFolderId || "";
+
+    // 1. Move files
+    for (const key of params.assetIds) {
+      const parts = key.split("/");
+      const filename = parts[parts.length - 1] || "";
+      const targetKey = `${targetPrefix}${filename}`;
+
+      if (key === targetKey) continue;
+
+      const copyCommand = new CopyObjectCommand({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        CopySource: `${R2_SHARED_BUCKET_NAME}/${encodeURIComponent(key)}`,
+        Key: targetKey,
+      });
+      await r2Client.send(copyCommand);
+
+      const deleteCommand = new DeleteObjectCommand({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        Key: key,
+      });
+      await r2Client.send(deleteCommand);
+    }
+
+    // 2. Move folders (prefix list, copy, and delete)
+    for (const prefix of params.folderIds) {
+      const listCommand = new ListObjectsV2Command({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        Prefix: prefix,
+      });
+      const response = await r2Client.send(listCommand);
+      const objects = response.Contents || [];
+
+      const parts = prefix.split("/").filter(Boolean);
+      const folderName = parts[parts.length - 1] || "";
+      const newFolderPrefix = `${targetPrefix}${folderName}/`;
+
+      if (prefix === newFolderPrefix) continue;
+
+      for (const obj of objects) {
+        if (obj.Key) {
+          const relativePart = obj.Key.substring(prefix.length);
+          const targetKey = `${newFolderPrefix}${relativePart}`;
+
+          const copyCommand = new CopyObjectCommand({
+            Bucket: R2_SHARED_BUCKET_NAME,
+            CopySource: `${R2_SHARED_BUCKET_NAME}/${encodeURIComponent(obj.Key)}`,
+            Key: targetKey,
+          });
+          await r2Client.send(copyCommand);
+
+          const deleteCommand = new DeleteObjectCommand({
+            Bucket: R2_SHARED_BUCKET_NAME,
+            Key: obj.Key,
+          });
+          await r2Client.send(deleteCommand);
+        }
+      }
+    }
+    return { success: true };
+  }
+
+  // Personal Drive Moving (Update foreign key parent pointers)
+  const targetParentId = params.targetFolderId;
+  const targetProjId = params.targetProjectId || null;
+
+  // Move files (Assets)
+  if (params.assetIds.length > 0) {
+    await db
+      .update(assets)
+      .set({
+        folderId: targetParentId,
+        projectId: targetProjId,
+      })
+      .where(inArray(assets.id, params.assetIds));
+  }
+
+  // Move folders
+  if (params.folderIds.length > 0) {
+    await db
+      .update(folders)
+      .set({
+        parentId: targetParentId,
+        projectId: targetProjId,
+      })
+      .where(inArray(folders.id, params.folderIds));
+
+    // Propagate projectId to any subdirectories inside moved folders
+    async function updateNestedFoldersProjectId(fId: string, projId: string | null) {
+      const subfolders = await db
+        .select({ id: folders.id })
+        .from(folders)
+        .where(eq(folders.parentId, fId));
+
+      for (const sf of subfolders) {
+        await db.update(folders).set({ projectId: projId }).where(eq(folders.id, sf.id));
+        await db.update(assets).set({ projectId: projId }).where(eq(assets.folderId, sf.id));
+        await updateNestedFoldersProjectId(sf.id, projId);
+      }
+    }
+
+    for (const fId of params.folderIds) {
+      await updateNestedFoldersProjectId(fId, targetProjId);
+    }
+  }
+
+  return { success: true };
+}
+
+export async function bulkCopyItems(params: {
+  assetIds: string[];
+  folderIds: string[];
+  targetFolderId: string | null;
+  targetProjectId?: string | null;
+  isSharedDrive?: boolean;
+}) {
+  await requireApprovedUser();
+
+  if (params.isSharedDrive) {
+    // S3 copying
+    const targetPrefix = params.targetFolderId || "";
+
+    // 1. Copy files
+    for (const key of params.assetIds) {
+      const parts = key.split("/");
+      const filename = parts[parts.length - 1] || "";
+      const targetKey = `${targetPrefix}${filename}`;
+
+      if (key === targetKey) continue;
+
+      const copyCommand = new CopyObjectCommand({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        CopySource: `${R2_SHARED_BUCKET_NAME}/${encodeURIComponent(key)}`,
+        Key: targetKey,
+      });
+      await r2Client.send(copyCommand);
+    }
+
+    // 2. Copy folders
+    for (const prefix of params.folderIds) {
+      const listCommand = new ListObjectsV2Command({
+        Bucket: R2_SHARED_BUCKET_NAME,
+        Prefix: prefix,
+      });
+      const response = await r2Client.send(listCommand);
+      const objects = response.Contents || [];
+
+      const parts = prefix.split("/").filter(Boolean);
+      const folderName = parts[parts.length - 1] || "";
+      const newFolderPrefix = `${targetPrefix}${folderName}/`;
+
+      if (prefix === newFolderPrefix) continue;
+
+      for (const obj of objects) {
+        if (obj.Key) {
+          const relativePart = obj.Key.substring(prefix.length);
+          const targetKey = `${newFolderPrefix}${relativePart}`;
+
+          const copyCommand = new CopyObjectCommand({
+            Bucket: R2_SHARED_BUCKET_NAME,
+            CopySource: `${R2_SHARED_BUCKET_NAME}/${encodeURIComponent(obj.Key)}`,
+            Key: targetKey,
+          });
+          await r2Client.send(copyCommand);
+        }
+      }
+    }
+    return { success: true };
+  }
+
+  // Personal Drive Copying
+  const targetParentId = params.targetFolderId;
+  const targetProjId = params.targetProjectId || null;
+
+  async function copySingleAsset(assetId: string, newFolderId: string | null) {
+    const [asset] = await db.select().from(assets).where(eq(assets.id, assetId));
+    if (!asset) return;
+
+    const sanitizedFilename = asset.filename.replace(/[^a-zA-Z0-9.-]/g, "_");
+    const newR2Key = `video-archive/${crypto.randomUUID()}-${sanitizedFilename}`;
+
+    const copyCommand = new CopyObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      CopySource: `${R2_BUCKET_NAME}/${encodeURIComponent(asset.r2Key)}`,
+      Key: newR2Key,
+    });
+    await r2Client.send(copyCommand);
+
+    const newAssetId = crypto.randomUUID();
+    await db.insert(assets).values({
+      id: newAssetId,
+      folderId: newFolderId,
+      projectId: targetProjId,
+      r2Key: newR2Key,
+      filename: asset.filename,
+      size: asset.size,
+      mimeType: asset.mimeType,
+      uploadedBy: asset.uploadedBy,
+      status: "completed",
+    });
+  }
+
+  async function copyFolderRecursive(sourceFolderId: string, destinationParentId: string | null) {
+    const [folder] = await db.select().from(folders).where(eq(folders.id, sourceFolderId));
+    if (!folder) return;
+
+    const newFolderId = crypto.randomUUID();
+    await db.insert(folders).values({
+      id: newFolderId,
+      parentId: destinationParentId,
+      projectId: targetProjId,
+      name: `${folder.name} (Copy)`,
+    });
+
+    const directAssets = await db.select().from(assets).where(eq(assets.folderId, sourceFolderId));
+    for (const asset of directAssets) {
+      await copySingleAsset(asset.id, newFolderId);
+    }
+
+    const subfolders = await db.select().from(folders).where(eq(folders.parentId, sourceFolderId));
+    for (const sub of subfolders) {
+      await copyFolderRecursive(sub.id, newFolderId);
+    }
+  }
+
+  // Copy assets
+  for (const assetId of params.assetIds) {
+    await copySingleAsset(assetId, targetParentId);
+  }
+
+  // Copy folders
+  for (const folderId of params.folderIds) {
+    await copyFolderRecursive(folderId, targetParentId);
+  }
+
+  return { success: true };
+}
