@@ -8,6 +8,8 @@ import {
   deleteFolder,
   createProject, 
   listProjects, 
+  renameProject,
+  deleteProject,
   listDriveContents, 
   getDownloadUrl, 
   deleteAsset,
@@ -122,6 +124,15 @@ export default function DrivePage() {
 
   // Mobile Sidebar & Collapsibility State
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Project Rename & Delete State
+  const [renameProjectModalOpen, setRenameProjectModalOpen] = useState(false);
+  const [selectedProjectToEdit, setSelectedProjectToEdit] = useState<any | null>(null);
+  const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectClient, setEditProjectClient] = useState("");
+
+  const [deleteProjectModalOpen, setDeleteProjectModalOpen] = useState(false);
+  const [selectedProjectToDelete, setSelectedProjectToDelete] = useState<any | null>(null);
 
   // Bulk Selection States
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
@@ -508,6 +519,46 @@ export default function DrivePage() {
       setProjects(loadedProjects);
     } catch (err) {
       alert("Failed to create project");
+    }
+  };
+
+  const handleRenameProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProjectToEdit || !editProjectName.trim()) return;
+
+    try {
+      await renameProject(selectedProjectToEdit.id, editProjectName.trim(), editProjectClient.trim() || undefined);
+      setRenameProjectModalOpen(false);
+      setSelectedProjectToEdit(null);
+      setEditProjectName("");
+      setEditProjectClient("");
+
+      // Reload projects list
+      const loadedProjects = await listProjects();
+      setProjects(loadedProjects);
+    } catch (err) {
+      alert("Failed to rename project");
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (!selectedProjectToDelete) return;
+
+    try {
+      await deleteProject(selectedProjectToDelete.id);
+      setDeleteProjectModalOpen(false);
+      
+      // If the deleted project was the currently selected one, fall back to "My Drive"
+      if (selectedProjectId === selectedProjectToDelete.id) {
+        selectProject(null, "My Drive");
+      }
+      setSelectedProjectToDelete(null);
+
+      // Reload projects list
+      const loadedProjects = await listProjects();
+      setProjects(loadedProjects);
+    } catch (err) {
+      alert("Failed to delete project");
     }
   };
 
@@ -1445,20 +1496,54 @@ export default function DrivePage() {
               </button>
             </div>
 
-            {projects.map((proj) => (
-              <button 
-                key={proj.id}
-                onClick={() => {
-                  selectProject(proj.id, proj.name);
-                  setSidebarOpen(false);
-                }}
-                className={`nav-link ${explorerMode === "personal" && selectedProjectId === proj.id ? "active" : ""}`}
-                style={{ paddingLeft: "24px" }}
-              >
-                <ChevronRight size={14} />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
-              </button>
-            ))}
+            {projects.map((proj) => {
+              const isActive = explorerMode === "personal" && selectedProjectId === proj.id;
+              return (
+                <div 
+                  key={proj.id}
+                  className={`project-sidebar-item ${isActive ? "active" : ""}`}
+                  onClick={() => {
+                    selectProject(proj.id, proj.name);
+                    setSidebarOpen(false);
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flexGrow: 1 }}>
+                    <ChevronRight size={14} style={{ flexShrink: 0 }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
+                  </div>
+                  <div className="project-sidebar-item-actions">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProjectToEdit(proj);
+                        setEditProjectName(proj.name);
+                        setEditProjectClient(proj.clientName || "");
+                        setRenameProjectModalOpen(true);
+                      }}
+                      className="btn-icon"
+                      style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                      title="Rename Project"
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedProjectToDelete(proj);
+                          setDeleteProjectModalOpen(true);
+                        }}
+                        className="btn-icon delete"
+                        style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        title="Delete Project"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {isAdmin && (
@@ -1906,6 +1991,79 @@ export default function DrivePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* RENAME PROJECT POPUP MODAL */}
+      {renameProjectModalOpen && selectedProjectToEdit && (
+        <div className="modal-overlay">
+          <div className="modal animate-scale-up">
+            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Rename Project</h3>
+            <form onSubmit={handleRenameProject} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Project Name</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={editProjectName}
+                  onChange={(e) => setEditProjectName(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Client Name (Optional)</label>
+                <input 
+                  type="text" 
+                  className="form-input" 
+                  value={editProjectClient}
+                  onChange={(e) => setEditProjectClient(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+                <button type="button" onClick={() => {
+                  setRenameProjectModalOpen(false);
+                  setSelectedProjectToEdit(null);
+                }} className="btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE PROJECT POPUP MODAL */}
+      {deleteProjectModalOpen && selectedProjectToDelete && (
+        <div className="modal-overlay">
+          <div className="modal animate-scale-up">
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "var(--accent-danger)" }}>Delete Project?</h3>
+            <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
+              Are you sure you want to delete the project <strong>{selectedProjectToDelete.name}</strong>?
+            </p>
+            <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-danger)", lineHeight: "1.4" }}>
+              <strong>WARNING:</strong> This action cannot be undone. All folders and physical files inside this project will be permanently deleted from Cloudflare R2 and the database.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+              <button type="button" onClick={() => {
+                setDeleteProjectModalOpen(false);
+                setSelectedProjectToDelete(null);
+              }} className="btn-secondary">
+                Cancel
+              </button>
+              <button 
+                onClick={handleDeleteProject} 
+                className="btn-primary" 
+                style={{ backgroundColor: "var(--accent-danger)" }}
+              >
+                Delete Permanently
+              </button>
+            </div>
           </div>
         </div>
       )}

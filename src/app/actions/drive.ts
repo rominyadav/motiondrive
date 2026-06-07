@@ -41,6 +41,44 @@ export async function listProjects() {
   return await db.select().from(projects).orderBy(desc(projects.createdAt));
 }
 
+export async function renameProject(projectId: string, newName: string, newClientName?: string) {
+  await requireApprovedUser();
+  await db
+    .update(projects)
+    .set({ name: newName, clientName: newClientName || null })
+    .where(eq(projects.id, projectId));
+  return { success: true };
+}
+
+export async function deleteProject(projectId: string) {
+  await requireAdmin();
+
+  // Retrieve all files (assets) mapped to this project
+  const allAssets = await db
+    .select({ id: assets.id, r2Key: assets.r2Key })
+    .from(assets)
+    .where(eq(assets.projectId, projectId));
+
+  // Delete all identified files from Cloudflare R2
+  for (const asset of allAssets) {
+    try {
+      const command = new DeleteObjectCommand({
+        Bucket: R2_BUCKET_NAME,
+        Key: asset.r2Key,
+      });
+      await r2Client.send(command);
+    } catch (error) {
+      console.error(`Failed to delete asset ${asset.id} from R2 during project deletion:`, error);
+    }
+  }
+
+  // Delete project from DB
+  // folders and assets tables use foreign keys with `onDelete: "cascade"`, so they are cleaned up automatically in DB
+  await db.delete(projects).where(eq(projects.id, projectId));
+
+  return { success: true };
+}
+
 // ==========================================
 // FOLDER MANAGEMENT ACTIONS
 // ==========================================
