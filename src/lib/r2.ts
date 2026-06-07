@@ -13,4 +13,5 @@ export const r2Client = new S3Client({
   },
 });
 
-export const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || "video-assets";
+export const R2_BUCKET_NAME = process.env.R2_BUCKET_NAME || "motionsewa-drive";
+export const R2_SHARED_BUCKET_NAME = process.env.R2_SHARED_BUCKET_NAME || "video-assets";

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { 
   createFolder, 
+  deleteFolder,
   createProject, 
   listProjects, 
   listDriveContents, 
@@ -12,7 +13,12 @@ import {
   deleteAsset,
   initiateMultipartUpload,
   getPresignedPartUrls,
-  completeMultipartUpload
+  completeMultipartUpload,
+  listSharedDriveContents,
+  createSharedFolder,
+  deleteSharedAsset,
+  deleteSharedFolder,
+  getSharedDownloadUrl
 } from "@/app/actions/drive";
 import { 
   Folder, 
@@ -27,7 +33,8 @@ import {
   ChevronRight, 
   LogOut, 
   Sliders, 
-  Loader2 
+  Loader2,
+  Share2
 } from "lucide-react";
 import Link from "next/link";
 import "./drive.css";
@@ -35,6 +42,10 @@ import "./drive.css";
 export default function DrivePage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Dual-Drive State
+  const [explorerMode, setExplorerMode] = useState<"personal" | "shared">("personal");
+  const [sharedFolderPath, setSharedFolderPath] = useState<string[]>([]);
 
   // Drive Navigation State
   const [projects, setProjects] = useState<any[]>([]);
@@ -93,24 +104,31 @@ export default function DrivePage() {
     checkAuth();
   }, [router]);
 
-  // Load folder contents whenever workspace scope changes
+  // Load folder contents whenever workspace scope or active drive mode changes
   useEffect(() => {
     if (loading || !session) return;
 
     async function loadContents() {
       try {
-        const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
-          projectId: selectedProjectId,
-          folderId: currentFolderId
-        });
-        setFolders(loadedFolders);
-        setAssets(loadedAssets);
+        if (explorerMode === "shared") {
+          const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+          const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
+          setFolders(loadedFolders);
+          setAssets(loadedAssets);
+        } else {
+          const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
+            projectId: selectedProjectId,
+            folderId: currentFolderId
+          });
+          setFolders(loadedFolders);
+          setAssets(loadedAssets);
+        }
       } catch (err) {
         console.error("Failed to load drive contents", err);
       }
     }
     loadContents();
-  }, [selectedProjectId, currentFolderId, loading, session]);
+  }, [selectedProjectId, currentFolderId, explorerMode, sharedFolderPath, loading, session]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -123,16 +141,27 @@ export default function DrivePage() {
     if (!newFolderName.trim()) return;
 
     try {
-      await createFolder(newFolderName.trim(), selectedProjectId || undefined, currentFolderId);
-      setNewFolderName("");
-      setFolderModalOpen(false);
+      if (explorerMode === "shared") {
+        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+        await createSharedFolder(prefix, newFolderName.trim());
+        setNewFolderName("");
+        setFolderModalOpen(false);
 
-      // Reload folders
-      const { folders: loadedFolders } = await listDriveContents({
-        projectId: selectedProjectId,
-        folderId: currentFolderId
-      });
-      setFolders(loadedFolders);
+        // Reload folders
+        const { folders: loadedFolders } = await listSharedDriveContents(prefix);
+        setFolders(loadedFolders);
+      } else {
+        await createFolder(newFolderName.trim(), selectedProjectId || undefined, currentFolderId);
+        setNewFolderName("");
+        setFolderModalOpen(false);
+
+        // Reload folders
+        const { folders: loadedFolders } = await listDriveContents({
+          projectId: selectedProjectId,
+          folderId: currentFolderId
+        });
+        setFolders(loadedFolders);
+      }
     } catch (err) {
       alert("Failed to create folder");
     }
@@ -157,13 +186,19 @@ export default function DrivePage() {
   };
 
   // Click on Folder
-  const navigateToFolder = (folder: { id: string; name: string }) => {
-    setCurrentFolderId(folder.id);
-    setFolderPath((prev) => [...prev, { id: folder.id, name: folder.name }]);
+  const navigateToFolder = (folder: { id: string; name: string; isR2Physical?: boolean }) => {
+    if (folder.isR2Physical) {
+      const parts = folder.id.split("/").filter(Boolean);
+      setSharedFolderPath(parts);
+    } else {
+      setCurrentFolderId(folder.id);
+      setFolderPath((prev) => [...prev, { id: folder.id, name: folder.name }]);
+    }
   };
 
-  // Click on Project
+  // Click on Project (forces Personal mode)
   const selectProject = (projectId: string | null, projectName: string) => {
+    setExplorerMode("personal");
     setSelectedProjectId(projectId);
     setCurrentFolderId(null);
     if (projectId === null) {
@@ -174,6 +209,14 @@ export default function DrivePage() {
         { id: `project-${projectId}`, name: projectName }
       ]);
     }
+  };
+
+  // Switch to Shared Drive mode
+  const selectSharedDrive = () => {
+    setExplorerMode("shared");
+    setSharedFolderPath([]);
+    setSelectedProjectId(null);
+    setCurrentFolderId(null);
   };
 
   // Click Breadcrumb
@@ -194,10 +237,17 @@ export default function DrivePage() {
     }
   };
 
+  const handleBreadcrumbClickShared = (path: string[]) => {
+    setSharedFolderPath(path);
+  };
+
   // Download File via Presigned URL
   const handleDownloadFile = async (assetId: string) => {
     try {
-      const { downloadUrl, filename } = await getDownloadUrl(assetId);
+      const { downloadUrl, filename } = explorerMode === "shared"
+        ? await getSharedDownloadUrl(assetId)
+        : await getDownloadUrl(assetId);
+
       // Create a temporary anchor element to trigger high-speed direct uploader
       const a = document.createElement("a");
       a.href = downloadUrl;
@@ -212,18 +262,52 @@ export default function DrivePage() {
 
   // Delete File
   const handleDeleteFile = async (assetId: string) => {
-    if (!confirm("Are you sure you want to delete this file from the Web Drive and Cloudflare R2?")) return;
+    const targetBucketText = explorerMode === "shared" ? "shared Cloudflare R2 bucket (video-assets)" : "Web Drive and Cloudflare R2";
+    if (!confirm(`Are you sure you want to delete this file from the ${targetBucketText}?`)) return;
 
     try {
-      await deleteAsset(assetId);
-      // Reload assets
-      const { assets: loadedAssets } = await listDriveContents({
-        projectId: selectedProjectId,
-        folderId: currentFolderId
-      });
-      setAssets(loadedAssets);
+      if (explorerMode === "shared") {
+        await deleteSharedAsset(assetId);
+        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+        const { assets: loadedAssets } = await listSharedDriveContents(prefix);
+        setAssets(loadedAssets);
+      } else {
+        await deleteAsset(assetId);
+        // Reload assets
+        const { assets: loadedAssets } = await listDriveContents({
+          projectId: selectedProjectId,
+          folderId: currentFolderId
+        });
+        setAssets(loadedAssets);
+      }
     } catch (err) {
       alert("Failed to delete file");
+    }
+  };
+
+  // Delete Folder
+  const handleDeleteFolder = async (folderId: string, folderName: string) => {
+    if (!confirm(`Are you sure you want to delete folder "${folderName}"? All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.`)) return;
+
+    try {
+      if (explorerMode === "shared") {
+        await deleteSharedFolder(folderId);
+        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+        const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
+        setFolders(loadedFolders);
+        setAssets(loadedAssets);
+      } else {
+        await deleteFolder(folderId);
+        // Reload drive contents
+        const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
+          projectId: selectedProjectId,
+          folderId: currentFolderId
+        });
+        setFolders(loadedFolders);
+        setAssets(loadedAssets);
+      }
+    } catch (err) {
+      alert("Failed to delete folder");
     }
   };
 
@@ -233,6 +317,9 @@ export default function DrivePage() {
     if (!files || files.length === 0) return;
 
     setUploadActive(true);
+
+    const isShared = explorerMode === "shared";
+    const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -250,12 +337,19 @@ export default function DrivePage() {
           mimeType: file.type || "application/octet-stream",
           size: file.size,
           projectId: selectedProjectId,
-          folderId: currentFolderId
+          folderId: currentFolderId,
+          isSharedDrive: isShared,
+          prefix: prefix
         });
 
         // B. Get presigned URLs for each chunk
         const partNumbers = Array.from({ length: totalChunks }, (_, index) => index + 1);
-        const { partUrls } = await getPresignedPartUrls({ uploadId, r2Key, partNumbers });
+        const { partUrls } = await getPresignedPartUrls({ 
+          uploadId, 
+          r2Key, 
+          partNumbers,
+          isSharedDrive: isShared
+        });
 
         // C. Upload chunks to Cloudflare R2 directly in parallel batches
         const parts: { PartNumber: number; ETag: string }[] = [];
@@ -297,15 +391,21 @@ export default function DrivePage() {
           uploadId,
           r2Key,
           parts,
-          assetId
+          assetId,
+          isSharedDrive: isShared
         });
 
         // Refresh Explorer Contents on finish
-        const { assets: loadedAssets } = await listDriveContents({
-          projectId: selectedProjectId,
-          folderId: currentFolderId
-        });
-        setAssets(loadedAssets);
+        if (isShared) {
+          const { assets: loadedAssets } = await listSharedDriveContents(prefix);
+          setAssets(loadedAssets);
+        } else {
+          const { assets: loadedAssets } = await listDriveContents({
+            projectId: selectedProjectId,
+            folderId: currentFolderId
+          });
+          setAssets(loadedAssets);
+        }
 
       } catch (err) {
         console.error("Multipart upload failed for " + filename, err);
@@ -368,10 +468,18 @@ export default function DrivePage() {
         <nav className="nav-links">
           <button 
             onClick={() => selectProject(null, "My Drive")} 
-            className={`nav-link ${selectedProjectId === null ? "active" : ""}`}
+            className={`nav-link ${explorerMode === "personal" && selectedProjectId === null ? "active" : ""}`}
           >
             <LayoutGrid size={18} />
             <span>My Drive</span>
+          </button>
+
+          <button 
+            onClick={selectSharedDrive} 
+            className={`nav-link ${explorerMode === "shared" ? "active" : ""}`}
+          >
+            <Share2 size={18} />
+            <span>Shared Drive</span>
           </button>
 
           <div style={{ marginTop: "16px" }}>
@@ -386,7 +494,7 @@ export default function DrivePage() {
               <button 
                 key={proj.id}
                 onClick={() => selectProject(proj.id, proj.name)}
-                className={`nav-link ${selectedProjectId === proj.id ? "active" : ""}`}
+                className={`nav-link ${explorerMode === "personal" && selectedProjectId === proj.id ? "active" : ""}`}
                 style={{ paddingLeft: "24px" }}
               >
                 <ChevronRight size={14} />
@@ -434,22 +542,49 @@ export default function DrivePage() {
         <div className="explorer animate-fade-in">
           {/* Breadcrumb Path */}
           <div className="breadcrumbs">
-            {folderPath.map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                {i > 0 && <ChevronRight size={16} style={{ opacity: 0.5 }} />}
-                <span 
-                  className={`breadcrumb-item ${i === folderPath.length - 1 ? "active" : ""}`}
-                  onClick={() => handleBreadcrumbClick(i)}
-                >
-                  {item.name}
-                </span>
-              </div>
-            ))}
+            {explorerMode === "shared" ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span 
+                    className={`breadcrumb-item ${sharedFolderPath.length === 0 ? "active" : ""}`}
+                    onClick={() => handleBreadcrumbClickShared([])}
+                  >
+                    Shared Drive
+                  </span>
+                </div>
+                {sharedFolderPath.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <ChevronRight size={16} style={{ opacity: 0.5 }} />
+                    <span 
+                      className={`breadcrumb-item ${i === sharedFolderPath.length - 1 ? "active" : ""}`}
+                      onClick={() => handleBreadcrumbClickShared(sharedFolderPath.slice(0, i + 1))}
+                    >
+                      {item}
+                    </span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              folderPath.map((item, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {i > 0 && <ChevronRight size={16} style={{ opacity: 0.5 }} />}
+                  <span 
+                    className={`breadcrumb-item ${i === folderPath.length - 1 ? "active" : ""}`}
+                    onClick={() => handleBreadcrumbClick(i)}
+                  >
+                    {item.name}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
           <div className="explorer-header">
             <h2 className="explorer-title">
-              {folderPath[folderPath.length - 1]?.name || "My Drive"}
+              {explorerMode === "shared" 
+                ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
+                : (folderPath[folderPath.length - 1]?.name || "My Drive")
+              }
             </h2>
             <div className="explorer-actions">
               <button onClick={() => setFolderModalOpen(true)} className="btn-secondary">
@@ -473,6 +608,19 @@ export default function DrivePage() {
                   >
                     <Folder className="folder-icon" size={24} />
                     <span className="folder-name">{folder.name}</span>
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteFolder(folder.id, folder.name);
+                        }}
+                        className="btn-icon delete"
+                        style={{ marginLeft: "auto", flexShrink: 0 }}
+                        title="Delete Folder"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
