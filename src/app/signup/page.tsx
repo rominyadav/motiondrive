@@ -16,6 +16,7 @@ function SignupForm() {
   
   const [invitationInfo, setInvitationInfo] = useState<{ email: string; role: string } | null>(null);
   const [checkingToken, setCheckingToken] = useState(false);
+  const [isVerificationSent, setIsVerificationSent] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -72,9 +73,8 @@ function SignupForm() {
         }
       }
 
-      // Success! Refresh and redirect to drive root
-      router.push("/");
-      router.refresh();
+      // Instead of redirecting to root (which requires verification), show verification message
+      setIsVerificationSent(true);
     } catch (err: any) {
       setError("An unexpected error occurred during signup.");
     } finally {
@@ -101,6 +101,28 @@ function SignupForm() {
             M
           </div>
           <h3>Validating Invitation...</h3>
+        </div>
+      </div>
+    );
+  }
+
+  if (isVerificationSent) {
+    return (
+      <div className="auth-wrapper">
+        <div className="auth-card animate-fade-in" style={{ textAlign: "center", padding: "40px 24px" }}>
+          <div className="user-avatar" style={{ margin: "0 auto 24px auto", width: "56px", height: "56px", background: "rgba(99, 102, 241, 0.2)", color: "var(--accent-indigo)" }}>
+            ✓
+          </div>
+          <h2 style={{ fontSize: "22px", fontWeight: "700", marginBottom: "12px" }}>Verify Your Email</h2>
+          <p style={{ color: "var(--text-secondary)", fontSize: "15px", lineHeight: "1.6", marginBottom: "24px" }}>
+            We've sent a verification link to <strong style={{ color: "#ffffff" }}>{email}</strong>.<br />
+            Please click the link in your email to verify your account and start using Motionsewa Drive.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <Link href="/login" className="btn-primary" style={{ textDecoration: "none", display: "inline-block" }}>
+              Proceed to Sign In
+            </Link>
+          </div>
         </div>
       </div>
     );
