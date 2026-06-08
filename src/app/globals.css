@@ -123,6 +123,16 @@ a {
   50% { opacity: 1; }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .animate-fade-in {
   animation: fadeIn var(--transition-smooth) forwards;
 }
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+

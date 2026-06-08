@@ -9,6 +9,7 @@ import {
   deleteFolder,
   createProject, 
   listProjects, 
+  listApprovedUsers,
   renameProject,
   deleteProject,
   listDriveContents, 
@@ -34,6 +35,12 @@ import {
   bulkCopyItems,
   getUserStorageStats
 } from "@/app/actions/drive";
+import {
+  createSharedLink,
+  listMySharedLinks,
+  revokeSharedLink,
+  extendSharedLink
+} from "@/app/actions/share";
 import { 
   Folder, 
   File, 
@@ -53,6 +60,7 @@ import {
   Archive,
   FolderOpen,
   Edit2,
+  MoreVertical,
   Info,
   AlertTriangle,
   CheckCircle,
@@ -97,7 +105,7 @@ function DrivePageContent() {
   };
 
   // Derived states from searchParams
-  const explorerMode = (searchParams.get("mode") as "personal" | "shared" | "archive") || "personal";
+  const explorerMode = (searchParams.get("mode") as "personal" | "shared" | "archive" | "links") || "personal";
   const selectedProjectId = searchParams.get("projectId");
   const currentFolderId = searchParams.get("folderId");
   const rawPath = searchParams.get("path") || "";
@@ -134,11 +142,25 @@ function DrivePageContent() {
     enabled: !!session,
   });
 
+  // TanStack Query for Approved Users
+  const { data: approvedUsers = [] } = useQuery({
+    queryKey: ["approvedUsers"],
+    queryFn: listApprovedUsers,
+    enabled: !!session,
+  });
+
   // TanStack Query for Storage Stats
   const { data: storageStats = null, refetch: fetchStorageStats } = useQuery({
     queryKey: ["storageStats"],
     queryFn: getUserStorageStats,
-    enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive",
+    enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive" && explorerMode !== "links",
+  });
+
+  // TanStack Query for Shared Links Management
+  const { data: sharedLinksList = [], isLoading: sharedLinksLoading, refetch: refetchSharedLinks } = useQuery({
+    queryKey: ["sharedLinks"],
+    queryFn: listMySharedLinks,
+    enabled: !!session && explorerMode === "links",
   });
 
   // TanStack Query for Drive contents
@@ -158,7 +180,7 @@ function DrivePageContent() {
         });
       }
     },
-    enabled: !!session,
+    enabled: !!session && explorerMode !== "links",
   });
 
   const folders = driveData.folders;
@@ -181,6 +203,10 @@ function DrivePageContent() {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectClient, setNewProjectClient] = useState("");
+  const [shareWithAll, setShareWithAll] = useState(true);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [editShareWithAll, setEditShareWithAll] = useState(true);
+  const [editSelectedUserIds, setEditSelectedUserIds] = useState<string[]>([]);
 
   // Upload Drawer State
   const [uploadProgress, setUploadProgress] = useState<{ [filename: string]: number }>({});
@@ -239,6 +265,15 @@ function DrivePageContent() {
   const [deleteProjectModalOpen, setDeleteProjectModalOpen] = useState(false);
   const [selectedProjectToDelete, setSelectedProjectToDelete] = useState<any | null>(null);
 
+  // Project Section Collapsible & Show More States
+  const [yourProjsExpanded, setYourProjsExpanded] = useState(true);
+  const [sharedProjsExpanded, setSharedProjsExpanded] = useState(false);
+  const [archiveProjsExpanded, setArchiveProjsExpanded] = useState(false);
+
+  const [yourProjsLimit, setYourProjsLimit] = useState(5);
+  const [sharedProjsLimit, setSharedProjsLimit] = useState(5);
+  const [archiveProjsLimit, setArchiveProjsLimit] = useState(5);
+
   // Unified Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
@@ -267,6 +302,10 @@ function DrivePageContent() {
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const newDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Project Header Actions State
+  const [projectHeaderMenuOpen, setProjectHeaderMenuOpen] = useState(false);
+  const projectHeaderRef = useRef<HTMLDivElement>(null);
+
   // Text File Editor State
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textFileName, setTextFileName] = useState("");
@@ -289,6 +328,177 @@ function DrivePageContent() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to render individual project item in sidebar
+  const renderProjectItem = (proj: any) => {
+    const isActive = explorerMode === "personal" && selectedProjectId === proj.id;
+    return (
+      <div 
+        key={proj.id}
+        className={`project-sidebar-item ${isActive ? "active" : ""}`}
+        onClick={() => {
+          selectProject(proj.id, proj.name);
+          setSidebarOpen(false);
+        }}
+        style={{
+          paddingLeft: "24px",
+          height: "36px",
+          fontSize: "13px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderRadius: "8px",
+          cursor: "pointer",
+          transition: "all 0.2s ease"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
+          <Folder size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
+        </div>
+        <div className="project-sidebar-item-actions">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedProjectToEdit(proj);
+              setEditProjectName(proj.name);
+              setEditProjectClient(proj.clientName || "");
+              
+              const shareAll = proj.sharedWith === "all" || !proj.sharedWith;
+              setEditShareWithAll(shareAll);
+              setEditSelectedUserIds(!shareAll && proj.sharedWith ? proj.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+              
+              setRenameProjectModalOpen(true);
+            }}
+            className="btn-icon"
+            style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+            title="Rename Project"
+          >
+            <Edit2 size={12} />
+          </button>
+          {isAdmin && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedProjectToDelete(proj);
+                setDeleteProjectModalOpen(true);
+              }}
+              className="btn-icon delete"
+              style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+              title="Delete Project"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Helper to render project section collapsible list
+  const renderProjectSection = (
+    title: string,
+    items: any[],
+    isExpanded: boolean,
+    toggleExpanded: () => void,
+    limit: number,
+    setLimit: (l: number) => void
+  ) => {
+    const visibleItems = isExpanded ? items.slice(0, limit) : [];
+    const hasMore = items.length > 5;
+    const isShowingAll = limit >= items.length;
+
+    return (
+      <div style={{ marginBottom: "12px" }}>
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpanded();
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 12px",
+            cursor: "pointer",
+            borderRadius: "6px",
+            userSelect: "none",
+            transition: "background-color 0.2s ease",
+          }}
+          className="sidebar-section-header"
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+            {isExpanded ? (
+              <ChevronDown size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+            ) : (
+              <ChevronRight size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+            )}
+            <span style={{ 
+              fontSize: "12px", 
+              fontWeight: 600, 
+              color: "var(--text-secondary)",
+              overflow: "hidden", 
+              textOverflow: "ellipsis", 
+              whiteSpace: "nowrap" 
+            }}>
+              {title} <span style={{ opacity: 0.5, fontWeight: 400, marginLeft: "4px" }}>({items.length})</span>
+            </span>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "4px" }}>
+            {items.length === 0 ? (
+              <div style={{ 
+                padding: "8px 12px 8px 24px", 
+                fontSize: "12px", 
+                color: "var(--text-muted)", 
+                fontStyle: "italic" 
+              }}>
+                No projects
+              </div>
+            ) : (
+              <>
+                {visibleItems.map(renderProjectItem)}
+                
+                {hasMore && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isShowingAll) {
+                        setLimit(5);
+                      } else {
+                        setLimit(items.length);
+                      }
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--accent-indigo)",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      textAlign: "left",
+                      padding: "6px 12px 6px 24px",
+                      cursor: "pointer",
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      opacity: 0.8,
+                      transition: "opacity 0.2s ease"
+                    }}
+                    className="show-more-btn"
+                  >
+                    {isShowingAll ? "Show Less" : `Show More (${items.length - 5} more)`}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Auto-close context menu on window clicks
   useEffect(() => {
@@ -331,6 +541,17 @@ function DrivePageContent() {
     };
     window.addEventListener("mousedown", handleCloseNewDropdown);
     return () => window.removeEventListener("mousedown", handleCloseNewDropdown);
+  }, []);
+
+  // Click outside Project Header Actions dropdown to dismiss it
+  useEffect(() => {
+    const handleCloseProjectHeaderMenu = (e: MouseEvent) => {
+      if (projectHeaderRef.current && !projectHeaderRef.current.contains(e.target as Node)) {
+        setProjectHeaderMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleCloseProjectHeaderMenu);
+    return () => window.removeEventListener("mousedown", handleCloseProjectHeaderMenu);
   }, []);
 
   // Dynamically inject Quill 2.0 CDN script and stylesheet
@@ -410,19 +631,55 @@ function DrivePageContent() {
     });
   };
 
-  // Copy Direct Link to Clipboard
+  // Copy Secure Proxy Link to Clipboard
   const handleCopyLink = async (asset: any) => {
     try {
-      const { downloadUrl } = explorerMode === "shared"
-        ? await getSharedDownloadUrl(asset.id)
-        : explorerMode === "archive"
-        ? await getArchiveDownloadUrl(asset.id)
-        : await getDownloadUrl(asset.id);
+      const isShared = explorerMode === "shared";
+      const isArchive = explorerMode === "archive";
 
-      await navigator.clipboard.writeText(downloadUrl);
-      showToast("Download URL copied to clipboard!", "success");
+      const params = {
+        assetId: (!isShared && !isArchive) ? asset.id : null,
+        physicalKey: (isShared || isArchive) ? asset.id : null,
+        physicalBucket: isShared ? "shared" : isArchive ? "archive" : null,
+        filename: asset.filename,
+      };
+
+      const result = await createSharedLink(params);
+      if (result.success && result.shareUrl) {
+        await navigator.clipboard.writeText(result.shareUrl);
+        showToast("Secure sharing link copied! (Expires in 24h)", "success");
+        queryClient.invalidateQueries({ queryKey: ["sharedLinks"] });
+      } else {
+        throw new Error("Failed to generate proxy share url");
+      }
     } catch (err) {
-      showToast("Failed to generate download URL", "error");
+      showToast("Failed to generate proxy sharing link", "error");
+    }
+  };
+
+  // Copy Secure Proxy Folder Link to Clipboard
+  const handleCopyFolderLink = async (folder: any) => {
+    try {
+      const isShared = explorerMode === "shared";
+      const isArchive = explorerMode === "archive";
+
+      const params = {
+        folderId: (!isShared && !isArchive) ? folder.id : null,
+        physicalPrefix: (isShared || isArchive) ? folder.id : null,
+        physicalBucket: isShared ? "shared" : isArchive ? "archive" : null,
+        filename: folder.name,
+      };
+
+      const result = await createSharedLink(params);
+      if (result.success && result.shareUrl) {
+        await navigator.clipboard.writeText(result.shareUrl);
+        showToast("Secure folder sharing link copied! (Expires in 24h)", "success");
+        queryClient.invalidateQueries({ queryKey: ["sharedLinks"] });
+      } else {
+        throw new Error("Failed to generate proxy share url");
+      }
+    } catch (err) {
+      showToast("Failed to generate proxy sharing link", "error");
     }
   };
 
@@ -581,9 +838,12 @@ function DrivePageContent() {
     if (!newProjectName.trim()) return;
 
     try {
-      await createProject(newProjectName.trim(), newProjectClient.trim() || undefined);
+      const sharedValue = shareWithAll ? "all" : selectedUserIds.join(",");
+      await createProject(newProjectName.trim(), newProjectClient.trim() || undefined, sharedValue);
       setNewProjectName("");
       setNewProjectClient("");
+      setShareWithAll(true);
+      setSelectedUserIds([]);
       setProjectModalOpen(false);
 
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -598,16 +858,19 @@ function DrivePageContent() {
     if (!selectedProjectToEdit || !editProjectName.trim()) return;
 
     try {
-      await renameProject(selectedProjectToEdit.id, editProjectName.trim(), editProjectClient.trim() || undefined);
+      const sharedValue = editShareWithAll ? "all" : editSelectedUserIds.join(",");
+      await renameProject(selectedProjectToEdit.id, editProjectName.trim(), editProjectClient.trim() || undefined, sharedValue);
       setRenameProjectModalOpen(false);
       setSelectedProjectToEdit(null);
       setEditProjectName("");
       setEditProjectClient("");
+      setEditShareWithAll(true);
+      setEditSelectedUserIds([]);
 
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      showToast("Project renamed successfully!", "success");
+      showToast("Project updated successfully!", "success");
     } catch (err) {
-      showToast("Failed to rename project", "error");
+      showToast("Failed to update project", "error");
     }
   };
 
@@ -734,8 +997,11 @@ function DrivePageContent() {
   };
 
   // Delete File
+  // Delete File
   const handleDeleteFile = async (assetId: string) => {
     const targetBucketText = explorerMode === "shared" ? "shared Cloudflare R2 bucket (video-assets)" : "Web Drive and Cloudflare R2";
+    const fileObj = driveData?.assets?.find((a: any) => a.id === assetId);
+    const resolvedFilename = fileObj?.filename || "File";
     
     setConfirmModal({
       open: true,
@@ -745,42 +1011,93 @@ function DrivePageContent() {
       confirmText: "Delete Permanently",
       confirmColor: "var(--accent-danger)",
       onConfirm: async () => {
-        try {
-          if (explorerMode === "shared") {
-            await deleteSharedAsset(assetId);
-          } else {
-            await deleteAsset(assetId);
+        const taskLabel = `Deleting ${resolvedFilename}`;
+        
+        // Show operation as in-progress in progress drawer
+        setUploadActive(true);
+        setUploadMinimized(false);
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 0
+        }));
+
+        // Fire and forget asynchronously
+        (async () => {
+          try {
+            if (explorerMode === "shared") {
+              await deleteSharedAsset(assetId);
+            } else {
+              await deleteAsset(assetId);
+            }
+            
+            // Mark completed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: 100
+            }));
+            await refreshExplorerContents();
+            showToast("File deleted successfully!", "success");
+          } catch (err) {
+            // Mark failed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: -2
+            }));
+            showToast("Failed to delete file", "error");
           }
-          await refreshExplorerContents();
-          showToast("File deleted successfully!", "success");
-        } catch (err) {
-          showToast("Failed to delete file", "error");
-        }
+        })();
       }
     });
   };
 
   // Delete Folder
-  const handleDeleteFolder = async (folderId: string, folderName: string) => {
+  const handleDeleteFolder = async (folderId: string, folderName?: string) => {
+    const folderObj = driveData?.folders?.find((f: any) => f.id === folderId);
+    const resolvedFolderName = folderName || folderObj?.name || "Folder";
+
     setConfirmModal({
       open: true,
       title: "Delete Folder?",
-      message: `Are you sure you want to delete folder "${folderName}"?`,
+      message: `Are you sure you want to delete folder "${resolvedFolderName}"?`,
       warning: "All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.",
       confirmText: "Delete Folder Permanently",
       confirmColor: "var(--accent-danger)",
       onConfirm: async () => {
-        try {
-          if (explorerMode === "shared") {
-            await deleteSharedFolder(folderId);
-          } else {
-            await deleteFolder(folderId);
+        const taskLabel = `Deleting folder "${resolvedFolderName}"`;
+        
+        // Show operation as in-progress in progress drawer
+        setUploadActive(true);
+        setUploadMinimized(false);
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 0
+        }));
+
+        // Fire and forget asynchronously
+        (async () => {
+          try {
+            if (explorerMode === "shared") {
+              await deleteSharedFolder(folderId);
+            } else {
+              await deleteFolder(folderId);
+            }
+            
+            // Mark completed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: 100
+            }));
+            await refreshExplorerContents();
+            showToast("Folder deleted successfully!", "success");
+          } catch (err) {
+            // Mark failed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: -2
+            }));
+            showToast("Failed to delete folder", "error");
           }
-          await refreshExplorerContents();
-          showToast("Folder deleted successfully!", "success");
-        } catch (err) {
-          showToast("Failed to delete folder", "error");
-        }
+        })();
       }
     });
   };
@@ -871,24 +1188,48 @@ function DrivePageContent() {
       confirmText: `Delete ${totalCount} Item(s)`,
       confirmColor: "var(--accent-danger)",
       onConfirm: async () => {
-        setLoading(true);
-        try {
-          const isShared = explorerMode === "shared";
-          await bulkDeleteItems({
-            assetIds: Array.from(selectedAssetIds),
-            folderIds: Array.from(selectedFolderIds),
-            isSharedDrive: isShared
-          });
+        const taskLabel = `Deleting ${totalCount} selected item(s)`;
+        const assetIdsToDelete = Array.from(selectedAssetIds);
+        const folderIdsToDelete = Array.from(selectedFolderIds);
+        const isShared = explorerMode === "shared";
 
-          handleClearSelection();
-          await refreshExplorerContents();
-          showToast("Selected items deleted successfully!", "success");
-        } catch (err) {
-          console.error("Bulk delete failed", err);
-          showToast("Failed to delete selected items", "error");
-        } finally {
-          setLoading(false);
-        }
+        // Show operation as in-progress in progress drawer
+        setUploadActive(true);
+        setUploadMinimized(false);
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 0
+        }));
+
+        // Clear selection immediately so user can continue using the drive
+        handleClearSelection();
+
+        // Run asynchronously in background without blocking UI
+        (async () => {
+          try {
+            await bulkDeleteItems({
+              assetIds: assetIdsToDelete,
+              folderIds: folderIdsToDelete,
+              isSharedDrive: isShared
+            });
+
+            // Mark completed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: 100
+            }));
+            await refreshExplorerContents();
+            showToast("Selected items deleted successfully!", "success");
+          } catch (err) {
+            console.error("Bulk delete failed", err);
+            // Mark failed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: -2
+            }));
+            showToast("Failed to delete selected items", "error");
+          }
+        })();
       }
     });
   };
@@ -937,13 +1278,14 @@ function DrivePageContent() {
 
   // Open Destination Picker Modal
   const handleOpenDestinationPicker = async (action: "move" | "copy") => {
-    if (explorerMode === "archive") return;
+    if (explorerMode === "archive" || explorerMode === "links") return;
     setPickerAction(action);
-    setPickerDriveMode(explorerMode);
+    const targetMode = explorerMode === "shared" ? "shared" : "personal";
+    setPickerDriveMode(targetMode);
     setPickerCurrentFolderId(null);
     setPickerFolderPath([]);
     setDestinationPickerOpen(true);
-    await handleLoadPickerDirectories(null, null, explorerMode);
+    await handleLoadPickerDirectories(null, null, targetMode);
   };
 
   // Toggle Drive Mode Inside Destination Picker
@@ -1656,9 +1998,93 @@ function DrivePageContent() {
 
   if (loading) {
     return (
-      <div className="app-container" style={{ alignItems: "center", justifyContent: "center" }}>
-        <Loader2 className="animate-spin brand-accent" size={42} />
-        <h3 style={{ marginLeft: "16px" }}>Opening your Web Drive...</h3>
+      <div className="app-container" style={{ 
+        alignItems: "center", 
+        justifyContent: "center",
+        position: "relative",
+        background: "radial-gradient(circle at center, rgba(99, 102, 241, 0.08) 0%, var(--bg-primary) 70%)",
+        flexDirection: "column"
+      }}>
+        {/* Glowing background circle for visual depth */}
+        <div style={{
+          position: "absolute",
+          width: "300px",
+          height: "300px",
+          background: "radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%)",
+          filter: "blur(50px)",
+          top: "calc(50% - 150px)",
+          left: "calc(50% - 150px)",
+          animation: "pulse-glow 3s infinite ease-in-out",
+          pointerEvents: "none"
+        }} />
+
+        <div className="glass animate-fade-in" style={{
+          padding: "48px",
+          borderRadius: "24px",
+          border: "1px solid var(--border-color)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          boxShadow: "var(--shadow-lg), 0 0 50px rgba(99, 102, 241, 0.08)",
+          maxWidth: "420px",
+          textAlign: "center",
+          zIndex: 10
+        }}>
+          {/* Circular progress loader container */}
+          <div style={{ position: "relative", width: "72px", height: "72px", marginBottom: "28px" }}>
+            {/* outer track */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid rgba(255, 255, 255, 0.03)"
+            }} />
+            {/* inner spinning glowing arc */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid transparent",
+              borderTopColor: "var(--accent-indigo)",
+              borderRightColor: "var(--accent-blue)",
+              animation: "spin 1.2s infinite cubic-bezier(0.4, 0.1, 0.6, 1)",
+              boxShadow: "0 0 15px rgba(99, 102, 241, 0.25)"
+            }} />
+            {/* Center glowing dot */}
+            <div style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "12px",
+              height: "12px",
+              borderRadius: "50%",
+              backgroundColor: "var(--accent-indigo)",
+              boxShadow: "0 0 12px var(--accent-indigo)"
+            }} />
+          </div>
+
+          <h2 style={{ 
+            fontSize: "22px", 
+            fontWeight: "800", 
+            letterSpacing: "-0.5px", 
+            marginBottom: "8px",
+            background: "linear-gradient(135deg, var(--text-primary), var(--text-secondary))",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent"
+          }}>
+            Motionsewa Drive
+          </h2>
+          <p style={{ 
+            fontSize: "14px", 
+            color: "var(--text-secondary)",
+            animation: "pulse-glow 2s infinite ease-in-out",
+            fontWeight: "500",
+            letterSpacing: "0.2px"
+          }}>
+            Opening your Web Drive...
+          </p>
+        </div>
       </div>
     );
   }
@@ -1713,9 +2139,20 @@ function DrivePageContent() {
             <span>Archive Drive</span>
           </button>
 
+          <button 
+            onClick={() => {
+              setParams({ mode: "links", projectId: null, folderId: null, path: null });
+              setSidebarOpen(false);
+            }} 
+            className={`nav-link ${explorerMode === "links" ? "active" : ""}`}
+          >
+            <LinkIcon size={18} />
+            <span>Shared Links</span>
+          </button>
+
           <div style={{ marginTop: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "8px" }}>
-              <span className="section-title" style={{ margin: 0, fontSize: "11px" }}>Projects</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "12px" }}>
+              <span className="section-title" style={{ margin: 0, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", opacity: 0.8 }}>Projects</span>
               <button 
                 onClick={() => {
                   setProjectModalOpen(true);
@@ -1728,54 +2165,65 @@ function DrivePageContent() {
               </button>
             </div>
 
-            {projects.map((proj) => {
-              const isActive = explorerMode === "personal" && selectedProjectId === proj.id;
+            {(() => {
+              const currentUserId = session?.user?.id;
+              
+              const yourProjects = (projects || []).filter(proj => {
+                const nameLower = (proj.name || "").toLowerCase();
+                const clientLower = (proj.clientName || "").toLowerCase();
+                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
+                
+                // My Projects are owned by the current logged-in user
+                const isOwnedByMe = proj.userId === currentUserId;
+                return isOwnedByMe && !isArchive;
+              });
+
+              const sharedProjects = (projects || []).filter(proj => {
+                const nameLower = (proj.name || "").toLowerCase();
+                const clientLower = (proj.clientName || "").toLowerCase();
+                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
+                
+                // Shared Projects are owned by anyone else (or legacy projects with no owner)
+                const isOwnedByMe = proj.userId === currentUserId;
+                return !isOwnedByMe && !isArchive;
+              });
+
+              const archiveProjects = (projects || []).filter(proj => {
+                const nameLower = (proj.name || "").toLowerCase();
+                const clientLower = (proj.clientName || "").toLowerCase();
+                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
+                return isArchive;
+              });
+
               return (
-                <div 
-                  key={proj.id}
-                  className={`project-sidebar-item ${isActive ? "active" : ""}`}
-                  onClick={() => {
-                    selectProject(proj.id, proj.name);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flexGrow: 1 }}>
-                    <ChevronRight size={14} style={{ flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
-                  </div>
-                  <div className="project-sidebar-item-actions">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedProjectToEdit(proj);
-                        setEditProjectName(proj.name);
-                        setEditProjectClient(proj.clientName || "");
-                        setRenameProjectModalOpen(true);
-                      }}
-                      className="btn-icon"
-                      style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      title="Rename Project"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    {isAdmin && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedProjectToDelete(proj);
-                          setDeleteProjectModalOpen(true);
-                        }}
-                        className="btn-icon delete"
-                        style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        title="Delete Project"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {renderProjectSection(
+                    "My Projects",
+                    yourProjects,
+                    yourProjsExpanded,
+                    () => setYourProjsExpanded(!yourProjsExpanded),
+                    yourProjsLimit,
+                    setYourProjsLimit
+                  )}
+                  {renderProjectSection(
+                    "Shared Projects",
+                    sharedProjects,
+                    sharedProjsExpanded,
+                    () => setSharedProjsExpanded(!sharedProjsExpanded),
+                    sharedProjsLimit,
+                    setSharedProjsLimit
+                  )}
+                  {renderProjectSection(
+                    "Archive Projects",
+                    archiveProjects,
+                    archiveProjsExpanded,
+                    () => setArchiveProjsExpanded(!archiveProjsExpanded),
+                    archiveProjsLimit,
+                    setArchiveProjsLimit
+                  )}
                 </div>
               );
-            })}
+            })()}
           </div>
 
           {isAdmin && (
@@ -1939,33 +2387,146 @@ function DrivePageContent() {
           </div>
 
           <div className="explorer-header">
-            <h2 className="explorer-title">
-              {explorerMode === "shared" 
-                ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
-                : explorerMode === "archive"
-                ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
-                : (folderPath[folderPath.length - 1]?.name || "My Drive")
-              }
+            <h2 className="explorer-title" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span>
+                {explorerMode === "shared" 
+                  ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
+                  : explorerMode === "archive"
+                  ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
+                  : (folderPath[folderPath.length - 1]?.name || "My Drive")
+                }
+              </span>
+
+              {(() => {
+                const currentOpenProject = explorerMode === "personal" && selectedProjectId 
+                  ? projects.find((p: any) => p.id === selectedProjectId)
+                  : null;
+                
+                if (!currentOpenProject) return null;
+
+                return (
+                  <div ref={projectHeaderRef} style={{ position: "relative", display: "inline-flex" }}>
+                    <button
+                      onClick={() => setProjectHeaderMenuOpen(!projectHeaderMenuOpen)}
+                      className="btn-icon"
+                      style={{
+                        padding: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: "8px",
+                        background: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        cursor: "pointer",
+                        color: "rgba(255, 255, 255, 0.8)",
+                        transition: "all 0.2s"
+                      }}
+                      title="Project Actions"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+
+                    {projectHeaderMenuOpen && (
+                      <div 
+                        className="new-dropdown-menu animate-scale-up" 
+                        style={{ 
+                          right: "auto", 
+                          left: 0, 
+                          top: "100%", 
+                          marginTop: "8px", 
+                          zIndex: 100,
+                          minWidth: "200px"
+                        }}
+                      >
+                        <button 
+                          onClick={() => {
+                            setSelectedProjectToEdit(currentOpenProject);
+                            setEditProjectName(currentOpenProject.name);
+                            setEditProjectClient(currentOpenProject.clientName || "");
+                            
+                            const shareAll = currentOpenProject.sharedWith === "all" || !currentOpenProject.sharedWith;
+                            setEditShareWithAll(shareAll);
+                            setEditSelectedUserIds(!shareAll && currentOpenProject.sharedWith ? currentOpenProject.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+                            
+                            setRenameProjectModalOpen(true);
+                            setProjectHeaderMenuOpen(false);
+                          }}
+                          className="dropdown-item"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            padding: "10px 14px",
+                            background: "none",
+                            border: "none",
+                            color: "var(--text-primary)",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            borderRadius: "4px",
+                            transition: "background 0.2s"
+                          }}
+                        >
+                          <Edit2 size={14} />
+                          <span>Rename / Edit Project</span>
+                        </button>
+                        
+                        {isAdmin && (
+                          <button 
+                            onClick={() => {
+                              setSelectedProjectToDelete(currentOpenProject);
+                              setDeleteProjectModalOpen(true);
+                              setProjectHeaderMenuOpen(false);
+                            }}
+                            className="dropdown-item"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              width: "100%",
+                              padding: "10px 14px",
+                              background: "none",
+                              border: "none",
+                              color: "#ff4d4d",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontSize: "13px",
+                              borderRadius: "4px",
+                              transition: "background 0.2s"
+                            }}
+                          >
+                            <Trash2 size={14} style={{ color: "#ff4d4d" }} />
+                            <span>Delete Project</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </h2>
             <div className="explorer-actions" ref={newDropdownRef}>
-              <div className="view-mode-toggle">
-                <button
-                  onClick={() => changeViewMode("table")}
-                  className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
-                  title="Table View"
-                >
-                  <List size={18} />
-                </button>
-                <button
-                  onClick={() => changeViewMode("icons")}
-                  className={`toggle-btn ${viewMode === "icons" ? "active" : ""}`}
-                  title="Icons View"
-                >
-                  <LayoutGrid size={18} />
-                </button>
-              </div>
+              {explorerMode !== "links" && (
+                <div className="view-mode-toggle">
+                  <button
+                    onClick={() => changeViewMode("table")}
+                    className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
+                    title="Table View"
+                  >
+                    <List size={18} />
+                  </button>
+                  <button
+                    onClick={() => changeViewMode("icons")}
+                    className={`toggle-btn ${viewMode === "icons" ? "active" : ""}`}
+                    title="Icons View"
+                  >
+                    <LayoutGrid size={18} />
+                  </button>
+                </div>
+              )}
 
-              {explorerMode !== "archive" && (
+              {explorerMode !== "archive" && explorerMode !== "links" && (
                 <div style={{ position: "relative" }}>
                   <button 
                     onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
@@ -2054,7 +2615,136 @@ function DrivePageContent() {
           </div>
 
           {/* VIEW RENDER: TABLE OR ICONS */}
-          {viewMode === "table" ? (
+          {explorerMode === "links" ? (
+            /* ========================================================
+               SHARED LINKS MANAGER VIEW
+               ======================================================== */
+            <div>
+              {sharedLinksLoading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "240px" }}>
+                  <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand-accent)" }} />
+                  <span style={{ marginLeft: "12px", fontSize: "14px", color: "var(--text-secondary)" }}>Loading shared links...</span>
+                </div>
+              ) : sharedLinksList.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <LinkIcon size={36} style={{ marginBottom: "12px", opacity: 0.7 }} />
+                  <p style={{ fontSize: "14px", fontWeight: "500" }}>No shared links created yet.</p>
+                  <p style={{ fontSize: "12px", opacity: 0.8, marginTop: "4px" }}>Generate share links by copying any file link in your drives.</p>
+                </div>
+              ) : (
+                <div className="files-container">
+                  <div className="table-header" style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr" }}>
+                    <div>File Name</div>
+                    <div>Created At</div>
+                    <div>Expires At</div>
+                    <div style={{ textAlign: "right" }}>Actions</div>
+                  </div>
+
+                  {sharedLinksList.map((link: any) => {
+                    const isExpired = new Date() > new Date(link.expiresAt);
+                    const isRevoked = link.isRevoked;
+                    const isActive = !isExpired && !isRevoked;
+
+                    let statusBadge = (
+                      <span className="badge success" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                        Active
+                      </span>
+                    );
+                    if (isRevoked) {
+                      statusBadge = (
+                        <span className="badge danger" style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                          Revoked
+                        </span>
+                      );
+                    } else if (isExpired) {
+                      statusBadge = (
+                        <span className="badge warning" style={{ background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                          Expired
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <div 
+                        key={link.id} 
+                        className="file-row" 
+                        style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr", cursor: "default" }}
+                      >
+                        <div className="file-info" style={{ minWidth: 0 }}>
+                          <LinkIcon size={16} style={{ color: "var(--brand-accent)", opacity: isActive ? 1 : 0.5, flexShrink: 0 }} />
+                          <span className="file-name" title={link.filename} style={{ textDecoration: isActive ? "none" : "line-through", opacity: isActive ? 1 : 0.6 }}>
+                            {link.filename}
+                          </span>
+                        </div>
+
+                        <div className="file-size" style={{ opacity: 0.8, fontSize: "13px" }}>
+                          {new Date(link.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </div>
+
+                        <div className="file-date" style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                          <span style={{ opacity: isActive ? 0.9 : 0.6, fontSize: "13px" }}>
+                            {new Date(link.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {statusBadge}
+                        </div>
+
+                        <div className="file-actions" style={{ gap: "8px", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={async () => {
+                              const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+                              const shareUrl = `${appUrl}/share/${link.id}`;
+                              await navigator.clipboard.writeText(shareUrl);
+                              showToast("Proxy sharing link copied to clipboard!", "success");
+                            }}
+                            className="btn-icon"
+                            title="Copy Secure Link"
+                            style={{ opacity: isActive ? 1 : 0.5 }}
+                          >
+                            <Copy size={16} />
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              try {
+                                await extendSharedLink(link.id, 24);
+                                refetchSharedLinks();
+                                showToast("Link lifespan extended by 24h!", "success");
+                              } catch (e) {
+                                showToast("Failed to extend link", "error");
+                              }
+                            }}
+                            className="btn-icon"
+                            title="Extend Age (Add 24h)"
+                            style={{ color: "var(--brand-accent)" }}
+                          >
+                            <Plus size={16} />
+                          </button>
+
+                          {isActive && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await revokeSharedLink(link.id);
+                                  refetchSharedLinks();
+                                  showToast("Link expired instantly!", "success");
+                                } catch (e) {
+                                  showToast("Failed to revoke link", "error");
+                                }
+                              }}
+                              className="btn-icon delete"
+                              title="Expire Right Away (Revoke)"
+                            >
+                              <Minus size={16} style={{ color: "#ef4444" }} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : viewMode === "table" ? (
             /* ========================================================
                1. UNIFIED TABLE LIST VIEW (DEFAULT)
                ======================================================== */
@@ -2385,7 +3075,7 @@ function DrivePageContent() {
         <div className="progress-drawer">
           <div className="drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <span className="drawer-title" style={{ fontWeight: '600' }}>
-              {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying"))
+              {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"))
                 ? "File Operations & Uploads"
                 : "Uploading Video Chunk(s)"}
             </span>
@@ -2419,7 +3109,7 @@ function DrivePageContent() {
               const isCompleted = progress === 100;
               const isCancelled = progress === -1;
               const isFailed = progress === -2;
-              const isBackgroundOp = filename.startsWith("Moving") || filename.startsWith("Copying");
+              const isBackgroundOp = filename.startsWith("Moving") || filename.startsWith("Copying") || filename.startsWith("Deleting");
 
               return (
                 <div key={filename} className="upload-item">
@@ -2502,14 +3192,14 @@ function DrivePageContent() {
             <span className="minimized-pill-text">
               {(() => {
                 const activeProgresses = Object.entries(uploadProgress).filter(([_, p]) => p >= 0 && p < 100);
-                const hasActiveOps = activeProgresses.some(([k]) => k.startsWith("Moving") || k.startsWith("Copying"));
-                const hasActiveUploads = activeProgresses.some(([k]) => !k.startsWith("Moving") && !k.startsWith("Copying"));
+                const hasActiveOps = activeProgresses.some(([k]) => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"));
+                const hasActiveUploads = activeProgresses.some(([k]) => !k.startsWith("Moving") && !k.startsWith("Copying") && !k.startsWith("Deleting"));
 
                 if (activeProgresses.length > 0) {
                   if (hasActiveUploads && hasActiveOps) {
                     return "Uploading & transferring items...";
                   } else if (hasActiveOps) {
-                    const opCount = activeProgresses.filter(([k]) => k.startsWith("Moving") || k.startsWith("Copying")).length;
+                    const opCount = activeProgresses.filter(([k]) => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting")).length;
                     return `${opCount} file operation${opCount > 1 ? 's' : ''} in progress`;
                   } else {
                     const uploadCount = activeProgresses.length;
@@ -2598,6 +3288,85 @@ function DrivePageContent() {
                 />
               </div>
 
+              <div className="form-group" style={{ margin: 0, marginTop: "4px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
+                  <input 
+                    type="checkbox" 
+                    checked={shareWithAll}
+                    onChange={(e) => setShareWithAll(e.target.checked)}
+                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                  />
+                  <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
+                </label>
+              </div>
+
+              {!shareWithAll && approvedUsers && approvedUsers.length > 0 && (
+                <div className="form-group" style={{ margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label className="form-label" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Select Specific Users to Share With</label>
+                  <div style={{
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px"
+                  }} className="custom-scrollbar">
+                    {approvedUsers.map((user: any) => {
+                      const isChecked = selectedUserIds.includes(user.id);
+                      return (
+                        <label 
+                          key={user.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "6px 8px",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            transition: "background-color 0.2s",
+                            backgroundColor: isChecked ? "rgba(99, 102, 241, 0.05)" : "transparent"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setSelectedUserIds(selectedUserIds.filter(id => id !== user.id));
+                                } else {
+                                  setSelectedUserIds([...selectedUserIds, user.id]);
+                                }
+                              }}
+                              style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                              <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
+                              <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: "10px",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            backgroundColor: user.role === "admin" ? "rgba(239, 68, 68, 0.1)" : user.role === "manager" ? "rgba(245, 158, 11, 0.1)" : "rgba(99, 102, 241, 0.1)",
+                            color: user.role === "admin" ? "#f87171" : user.role === "manager" ? "#fbbf24" : "#818cf8"
+                          }}>
+                            {user.role}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setProjectModalOpen(false)} className="btn-secondary">
                   Cancel
@@ -2638,6 +3407,85 @@ function DrivePageContent() {
                 />
               </div>
 
+              <div className="form-group" style={{ margin: 0, marginTop: "4px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
+                  <input 
+                    type="checkbox" 
+                    checked={editShareWithAll}
+                    onChange={(e) => setEditShareWithAll(e.target.checked)}
+                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                  />
+                  <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
+                </label>
+              </div>
+
+              {!editShareWithAll && approvedUsers && approvedUsers.length > 0 && (
+                <div className="form-group" style={{ margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label className="form-label" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Select Specific Users to Share With</label>
+                  <div style={{
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px"
+                  }} className="custom-scrollbar">
+                    {approvedUsers.map((user: any) => {
+                      const isChecked = editSelectedUserIds.includes(user.id);
+                      return (
+                        <label 
+                          key={user.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "6px 8px",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            transition: "background-color 0.2s",
+                            backgroundColor: isChecked ? "rgba(99, 102, 241, 0.05)" : "transparent"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setEditSelectedUserIds(editSelectedUserIds.filter(id => id !== user.id));
+                                } else {
+                                  setEditSelectedUserIds([...editSelectedUserIds, user.id]);
+                                }
+                              }}
+                              style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                              <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
+                              <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: "10px",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            backgroundColor: user.role === "admin" ? "rgba(239, 68, 68, 0.1)" : user.role === "manager" ? "rgba(245, 158, 11, 0.1)" : "rgba(99, 102, 241, 0.1)",
+                            color: user.role === "admin" ? "#f87171" : user.role === "manager" ? "#fbbf24" : "#818cf8"
+                          }}>
+                            {user.role}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
                 <button type="button" onClick={() => {
                   setRenameProjectModalOpen(false);
@@ -2676,6 +3524,7 @@ function DrivePageContent() {
                 onClick={handleDeleteProject} 
                 className="btn-primary" 
                 style={{ backgroundColor: "var(--accent-danger)" }}
+                autoFocus
               >
                 Delete Permanently
               </button>
@@ -2713,6 +3562,7 @@ function DrivePageContent() {
                 }} 
                 className="btn-primary" 
                 style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-danger)" }}
+                autoFocus
               >
                 {confirmModal.confirmText || "Confirm"}
               </button>
@@ -2761,6 +3611,16 @@ function DrivePageContent() {
               >
                 <Info size={16} />
                 <span>Get Info</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleCopyFolderLink(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <LinkIcon size={16} />
+                <span>Copy Share Link</span>
               </button>
               {isAdmin && explorerMode !== "archive" && (
                 <button 
