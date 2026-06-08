@@ -14,7 +14,7 @@ export default function AdminPage() {
   const [invites, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "staff">("staff");
+  const [inviteRole, setInviteRole] = useState<"admin" | "manager" | "staff">("staff");
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const router = useRouter();
@@ -47,7 +47,7 @@ export default function AdminPage() {
       }
 
       const user = session.user as any;
-      if (user.role !== "admin") {
+      if (user.role !== "admin" && user.role !== "manager") {
         router.push("/");
         return;
       }
@@ -301,6 +301,7 @@ export default function AdminPage() {
                   onChange={(e) => setInviteRole(e.target.value as any)}
                 >
                   <option value="staff">Staff (Video Editor / Creator)</option>
+                  <option value="manager">Manager (Approve & Invite Users)</option>
                   <option value="admin">Admin (Full Access & Controller)</option>
                 </select>
               </div>

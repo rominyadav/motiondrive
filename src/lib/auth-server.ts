@@ -35,7 +35,7 @@ export async function requireApprovedUser() {
 export async function requireAdmin() {
   const session = await requireApprovedUser();
   const user = session.user as any;
-  if (user.role !== "admin") {
+  if (user.role !== "admin" && user.role !== "manager") {
     throw new Error("Forbidden");
   }
 

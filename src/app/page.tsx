@@ -1526,7 +1526,7 @@ export default function DrivePage() {
     );
   }
 
-  const isAdmin = (session?.user as any)?.role === "admin";
+  const isAdmin = (session?.user as any)?.role === "admin" || (session?.user as any)?.role === "manager";
 
   return (
     <div className="app-container">

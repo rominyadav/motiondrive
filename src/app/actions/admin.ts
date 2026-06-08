@@ -10,7 +10,7 @@ import crypto from "crypto";
 /**
  * Invites a new staff member or admin via email.
  */
-export async function inviteUser(email: string, role: "admin" | "staff" = "staff") {
+export async function inviteUser(email: string, role: "admin" | "manager" | "staff" = "staff") {
   await requireAdmin();
 
   const token = crypto.randomBytes(32).toString("hex");

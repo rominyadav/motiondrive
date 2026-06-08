@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import { Clock } from "lucide-react";
@@ -7,6 +8,38 @@ import "../drive.css";
 
 export default function AwaitingApprovalPage() {
   const router = useRouter();
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout;
+
+    const checkStatus = async () => {
+      try {
+        const { data: sessionData } = await authClient.getSession();
+        if (!sessionData) {
+          router.push("/login");
+          return;
+        }
+        
+        const user = sessionData.user as any;
+        if (user && user.status === "approved") {
+          router.push("/");
+          router.refresh();
+        }
+      } catch (err) {
+        console.error("Error polling approval status:", err);
+      }
+    };
+
+    // Check immediately on mount
+    checkStatus();
+
+    // Polling interval of 4 seconds
+    intervalId = setInterval(checkStatus, 4000);
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [router]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
