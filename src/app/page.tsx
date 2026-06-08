@@ -35,6 +35,12 @@ import {
   bulkCopyItems,
   getUserStorageStats
 } from "@/app/actions/drive";
+import {
+  createSharedLink,
+  listMySharedLinks,
+  revokeSharedLink,
+  extendSharedLink
+} from "@/app/actions/share";
 import { 
   Folder, 
   File, 
@@ -99,7 +105,7 @@ function DrivePageContent() {
   };
 
   // Derived states from searchParams
-  const explorerMode = (searchParams.get("mode") as "personal" | "shared" | "archive") || "personal";
+  const explorerMode = (searchParams.get("mode") as "personal" | "shared" | "archive" | "links") || "personal";
   const selectedProjectId = searchParams.get("projectId");
   const currentFolderId = searchParams.get("folderId");
   const rawPath = searchParams.get("path") || "";
@@ -147,7 +153,14 @@ function DrivePageContent() {
   const { data: storageStats = null, refetch: fetchStorageStats } = useQuery({
     queryKey: ["storageStats"],
     queryFn: getUserStorageStats,
-    enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive",
+    enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive" && explorerMode !== "links",
+  });
+
+  // TanStack Query for Shared Links Management
+  const { data: sharedLinksList = [], isLoading: sharedLinksLoading, refetch: refetchSharedLinks } = useQuery({
+    queryKey: ["sharedLinks"],
+    queryFn: listMySharedLinks,
+    enabled: !!session && explorerMode === "links",
   });
 
   // TanStack Query for Drive contents
@@ -167,7 +180,7 @@ function DrivePageContent() {
         });
       }
     },
-    enabled: !!session,
+    enabled: !!session && explorerMode !== "links",
   });
 
   const folders = driveData.folders;
@@ -618,19 +631,29 @@ function DrivePageContent() {
     });
   };
 
-  // Copy Direct Link to Clipboard
+  // Copy Secure Proxy Link to Clipboard
   const handleCopyLink = async (asset: any) => {
     try {
-      const { downloadUrl } = explorerMode === "shared"
-        ? await getSharedDownloadUrl(asset.id)
-        : explorerMode === "archive"
-        ? await getArchiveDownloadUrl(asset.id)
-        : await getDownloadUrl(asset.id);
+      const isShared = explorerMode === "shared";
+      const isArchive = explorerMode === "archive";
 
-      await navigator.clipboard.writeText(downloadUrl);
-      showToast("Download URL copied to clipboard!", "success");
+      const params = {
+        assetId: (!isShared && !isArchive) ? asset.id : null,
+        physicalKey: (isShared || isArchive) ? asset.id : null,
+        physicalBucket: isShared ? "shared" : isArchive ? "archive" : null,
+        filename: asset.filename,
+      };
+
+      const result = await createSharedLink(params);
+      if (result.success && result.shareUrl) {
+        await navigator.clipboard.writeText(result.shareUrl);
+        showToast("Secure sharing link copied! (Expires in 24h)", "success");
+        queryClient.invalidateQueries({ queryKey: ["sharedLinks"] });
+      } else {
+        throw new Error("Failed to generate proxy share url");
+      }
     } catch (err) {
-      showToast("Failed to generate download URL", "error");
+      showToast("Failed to generate proxy sharing link", "error");
     }
   };
 
@@ -1229,13 +1252,14 @@ function DrivePageContent() {
 
   // Open Destination Picker Modal
   const handleOpenDestinationPicker = async (action: "move" | "copy") => {
-    if (explorerMode === "archive") return;
+    if (explorerMode === "archive" || explorerMode === "links") return;
     setPickerAction(action);
-    setPickerDriveMode(explorerMode);
+    const targetMode = explorerMode === "shared" ? "shared" : "personal";
+    setPickerDriveMode(targetMode);
     setPickerCurrentFolderId(null);
     setPickerFolderPath([]);
     setDestinationPickerOpen(true);
-    await handleLoadPickerDirectories(null, null, explorerMode);
+    await handleLoadPickerDirectories(null, null, targetMode);
   };
 
   // Toggle Drive Mode Inside Destination Picker
@@ -2089,6 +2113,17 @@ function DrivePageContent() {
             <span>Archive Drive</span>
           </button>
 
+          <button 
+            onClick={() => {
+              setParams({ mode: "links", projectId: null, folderId: null, path: null });
+              setSidebarOpen(false);
+            }} 
+            className={`nav-link ${explorerMode === "links" ? "active" : ""}`}
+          >
+            <LinkIcon size={18} />
+            <span>Shared Links</span>
+          </button>
+
           <div style={{ marginTop: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "12px" }}>
               <span className="section-title" style={{ margin: 0, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", opacity: 0.8 }}>Projects</span>
@@ -2446,24 +2481,26 @@ function DrivePageContent() {
               })()}
             </h2>
             <div className="explorer-actions" ref={newDropdownRef}>
-              <div className="view-mode-toggle">
-                <button
-                  onClick={() => changeViewMode("table")}
-                  className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
-                  title="Table View"
-                >
-                  <List size={18} />
-                </button>
-                <button
-                  onClick={() => changeViewMode("icons")}
-                  className={`toggle-btn ${viewMode === "icons" ? "active" : ""}`}
-                  title="Icons View"
-                >
-                  <LayoutGrid size={18} />
-                </button>
-              </div>
+              {explorerMode !== "links" && (
+                <div className="view-mode-toggle">
+                  <button
+                    onClick={() => changeViewMode("table")}
+                    className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
+                    title="Table View"
+                  >
+                    <List size={18} />
+                  </button>
+                  <button
+                    onClick={() => changeViewMode("icons")}
+                    className={`toggle-btn ${viewMode === "icons" ? "active" : ""}`}
+                    title="Icons View"
+                  >
+                    <LayoutGrid size={18} />
+                  </button>
+                </div>
+              )}
 
-              {explorerMode !== "archive" && (
+              {explorerMode !== "archive" && explorerMode !== "links" && (
                 <div style={{ position: "relative" }}>
                   <button 
                     onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
@@ -2552,7 +2589,136 @@ function DrivePageContent() {
           </div>
 
           {/* VIEW RENDER: TABLE OR ICONS */}
-          {viewMode === "table" ? (
+          {explorerMode === "links" ? (
+            /* ========================================================
+               SHARED LINKS MANAGER VIEW
+               ======================================================== */
+            <div>
+              {sharedLinksLoading ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "240px" }}>
+                  <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand-accent)" }} />
+                  <span style={{ marginLeft: "12px", fontSize: "14px", color: "var(--text-secondary)" }}>Loading shared links...</span>
+                </div>
+              ) : sharedLinksList.length === 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
+                  <LinkIcon size={36} style={{ marginBottom: "12px", opacity: 0.7 }} />
+                  <p style={{ fontSize: "14px", fontWeight: "500" }}>No shared links created yet.</p>
+                  <p style={{ fontSize: "12px", opacity: 0.8, marginTop: "4px" }}>Generate share links by copying any file link in your drives.</p>
+                </div>
+              ) : (
+                <div className="files-container">
+                  <div className="table-header" style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr" }}>
+                    <div>File Name</div>
+                    <div>Created At</div>
+                    <div>Expires At</div>
+                    <div style={{ textAlign: "right" }}>Actions</div>
+                  </div>
+
+                  {sharedLinksList.map((link: any) => {
+                    const isExpired = new Date() > new Date(link.expiresAt);
+                    const isRevoked = link.isRevoked;
+                    const isActive = !isExpired && !isRevoked;
+
+                    let statusBadge = (
+                      <span className="badge success" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                        Active
+                      </span>
+                    );
+                    if (isRevoked) {
+                      statusBadge = (
+                        <span className="badge danger" style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                          Revoked
+                        </span>
+                      );
+                    } else if (isExpired) {
+                      statusBadge = (
+                        <span className="badge warning" style={{ background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                          Expired
+                        </span>
+                      );
+                    }
+
+                    return (
+                      <div 
+                        key={link.id} 
+                        className="file-row" 
+                        style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr", cursor: "default" }}
+                      >
+                        <div className="file-info" style={{ minWidth: 0 }}>
+                          <LinkIcon size={16} style={{ color: "var(--brand-accent)", opacity: isActive ? 1 : 0.5, flexShrink: 0 }} />
+                          <span className="file-name" title={link.filename} style={{ textDecoration: isActive ? "none" : "line-through", opacity: isActive ? 1 : 0.6 }}>
+                            {link.filename}
+                          </span>
+                        </div>
+
+                        <div className="file-size" style={{ opacity: 0.8, fontSize: "13px" }}>
+                          {new Date(link.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </div>
+
+                        <div className="file-date" style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                          <span style={{ opacity: isActive ? 0.9 : 0.6, fontSize: "13px" }}>
+                            {new Date(link.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {statusBadge}
+                        </div>
+
+                        <div className="file-actions" style={{ gap: "8px", justifyContent: "flex-end" }}>
+                          <button
+                            onClick={async () => {
+                              const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+                              const shareUrl = `${appUrl}/share/${link.id}`;
+                              await navigator.clipboard.writeText(shareUrl);
+                              showToast("Proxy sharing link copied to clipboard!", "success");
+                            }}
+                            className="btn-icon"
+                            title="Copy Secure Link"
+                            style={{ opacity: isActive ? 1 : 0.5 }}
+                          >
+                            <Copy size={16} />
+                          </button>
+
+                          <button
+                            onClick={async () => {
+                              try {
+                                await extendSharedLink(link.id, 24);
+                                refetchSharedLinks();
+                                showToast("Link lifespan extended by 24h!", "success");
+                              } catch (e) {
+                                showToast("Failed to extend link", "error");
+                              }
+                            }}
+                            className="btn-icon"
+                            title="Extend Age (Add 24h)"
+                            style={{ color: "var(--brand-accent)" }}
+                          >
+                            <Plus size={16} />
+                          </button>
+
+                          {isActive && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  await revokeSharedLink(link.id);
+                                  refetchSharedLinks();
+                                  showToast("Link expired instantly!", "success");
+                                } catch (e) {
+                                  showToast("Failed to revoke link", "error");
+                                }
+                              }}
+                              className="btn-icon delete"
+                              title="Expire Right Away (Revoke)"
+                            >
+                              <Minus size={16} style={{ color: "#ef4444" }} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : viewMode === "table" ? (
             /* ========================================================
                1. UNIFIED TABLE LIST VIEW (DEFAULT)
                ======================================================== */

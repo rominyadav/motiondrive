@@ -99,3 +99,16 @@ export const invitations = pgTable("invitation", {
   expiresAt: timestamp("expiresAt").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+export const sharedLinks = pgTable("shared_link", {
+  id: text("id").primaryKey(), // Cryptographically secure token/id
+  assetId: text("assetId").references(() => assets.id, { onDelete: "cascade" }), // Personal drive asset reference
+  physicalKey: text("physicalKey"), // Key for shared drive or archive files
+  physicalBucket: text("physicalBucket"), // "shared" | "archive"
+  filename: text("filename").notNull(), // Cached file name
+  userId: text("userId").notNull().references(() => user.id, { onDelete: "cascade" }), // Creator
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  isRevoked: boolean("isRevoked").default(false).notNull(),
+});
+
