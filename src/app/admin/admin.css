@@ -334,30 +334,23 @@
 /* Soft badging */
 .soft-badge {
   display: inline-flex;
-  font-size: 0.7rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 700;
   text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 6px;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.05em;
 }
 
 .soft-badge.approved {
-  background: rgba(16, 185, 129, 0.08);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.15);
+  color: #10b981;
 }
 
 .soft-badge.pending {
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
 }
 
-.soft-badge.suspended {
-  background: rgba(239, 68, 68, 0.08);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.15);
+.soft-badge.suspended,
+.soft-badge.revoked {
+  color: var(--accent-destructive);
 }
 
 /* Sleek inputs */
@@ -402,24 +395,24 @@
 }
 
 .action-btn.suspend {
-  background: rgba(239, 68, 68, 0.1);
+  background: var(--accent-destructive-glow);
   color: #f87171;
   border: 1px solid rgba(239, 68, 68, 0.15);
 }
 
 .action-btn.suspend:hover {
-  background: #ef4444;
+  background: var(--accent-destructive-hover);
   color: #ffffff;
 }
 
 .action-btn.revoke {
-  background: rgba(239, 68, 68, 0.08);
+  background: var(--accent-destructive-glow);
   color: #f87171;
   border: 1px solid rgba(239, 68, 68, 0.15);
 }
 
 .action-btn.revoke:hover {
-  background: #ef4444;
+  background: var(--accent-destructive-hover);
   color: #ffffff;
 }
 

@@ -709,7 +709,7 @@ export default function AdminPage() {
                             </td>
 
                             <td>
-                              <span className={`soft-badge ${status === "active" ? "approved" : status === "expired" ? "pending" : "suspended"}`}>
+                              <span className={`soft-badge ${status === "active" ? "approved" : status === "expired" ? "pending" : "revoked"}`}>
                                 {status}
                               </span>
                             </td>

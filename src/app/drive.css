@@ -442,8 +442,8 @@
 }
 
 .btn-icon.delete:hover {
-  color: var(--accent-danger);
-  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--accent-destructive);
+  background-color: var(--accent-destructive-glow);
 }
 
 /* ==========================================
@@ -540,8 +540,8 @@
 }
 
 .cancel-upload-btn:hover {
-  color: var(--accent-danger, #ef4444) !important;
-  background-color: rgba(239, 68, 68, 0.15) !important;
+  color: var(--accent-destructive, #ef4444) !important;
+  background-color: var(--accent-destructive-glow) !important;
   border-radius: 4px;
 }
 
@@ -687,7 +687,7 @@
 
 .btn-suspend {
   padding: 6px 12px;
-  background-color: var(--accent-danger);
+  background-color: var(--accent-destructive);
   color: #fff;
   font-size: 12px;
   font-weight: 600;
@@ -695,26 +695,22 @@
 }
 
 .badge {
-  padding: 4px 8px;
-  border-radius: 9999px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .badge.approved {
-  background-color: rgba(16, 185, 129, 0.1);
   color: var(--accent-success);
 }
 
 .badge.pending {
-  background-color: rgba(245, 158, 11, 0.1);
   color: var(--accent-warning);
 }
 
 .badge.suspended {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: var(--accent-danger);
+  color: var(--accent-destructive);
 }
 
 /* ==========================================
@@ -859,15 +855,15 @@
 }
 
 .context-menu-item.delete {
-  color: var(--accent-danger);
+  color: var(--accent-destructive);
 }
 
 .context-menu-item.delete svg {
-  color: var(--accent-danger);
+  color: var(--accent-destructive);
 }
 
 .context-menu-item.delete:hover {
-  background-color: rgba(239, 68, 68, 0.1);
+  background-color: var(--accent-destructive-glow);
 }
 
 /* ==========================================
@@ -905,11 +901,11 @@
 
 .toast.toast-error {
   border-color: rgba(239, 68, 68, 0.4);
-  background-color: rgba(239, 68, 68, 0.08);
+  background-color: var(--accent-destructive-glow);
   box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.1), var(--shadow-lg);
 }
 .toast.toast-error svg {
-  color: var(--accent-danger);
+  color: var(--accent-destructive);
 }
 
 .toast.toast-info {

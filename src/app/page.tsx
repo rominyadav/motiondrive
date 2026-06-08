@@ -1019,7 +1019,7 @@ function DrivePageContent() {
       message: `Are you sure you want to delete this file from the ${targetBucketText}?`,
       warning: "This action cannot be undone.",
       confirmText: "Delete Permanently",
-      confirmColor: "var(--accent-danger)",
+      confirmColor: "var(--accent-destructive)",
       onConfirm: async () => {
         const taskLabel = `Deleting ${resolvedFilename}`;
         
@@ -1071,7 +1071,7 @@ function DrivePageContent() {
       message: `Are you sure you want to delete folder "${resolvedFolderName}"?`,
       warning: "All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.",
       confirmText: "Delete Folder Permanently",
-      confirmColor: "var(--accent-danger)",
+      confirmColor: "var(--accent-destructive)",
       onConfirm: async () => {
         const taskLabel = `Deleting folder "${resolvedFolderName}"`;
         
@@ -1196,7 +1196,7 @@ function DrivePageContent() {
       message: `Are you sure you want to permanently delete the ${totalCount} selected item(s) from the Web Drive and Cloudflare R2?`,
       warning: "This action cannot be undone.",
       confirmText: `Delete ${totalCount} Item(s)`,
-      confirmColor: "var(--accent-danger)",
+      confirmColor: "var(--accent-destructive)",
       onConfirm: async () => {
         const taskLabel = `Deleting ${totalCount} selected item(s)`;
         const assetIdsToDelete = Array.from(selectedAssetIds);
@@ -2684,19 +2684,19 @@ function DrivePageContent() {
                     const isActive = !isExpired && !isRevoked;
 
                     let statusBadge = (
-                      <span className="badge success" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                      <span className="badge success" style={{ color: "#10b981", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                         Active
                       </span>
                     );
                     if (isRevoked) {
                       statusBadge = (
-                        <span className="badge danger" style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                        <span className="badge danger" style={{ color: "var(--accent-destructive)", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                           Revoked
                         </span>
                       );
                     } else if (isExpired) {
                       statusBadge = (
-                        <span className="badge warning" style={{ background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                        <span className="badge warning" style={{ color: "#f59e0b", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                           Expired
                         </span>
                       );
@@ -3733,11 +3733,11 @@ function DrivePageContent() {
       {deleteProjectModalOpen && selectedProjectToDelete && (
         <div className="modal-overlay">
           <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "var(--accent-danger)" }}>Delete Project?</h3>
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "var(--accent-destructive)" }}>Delete Project?</h3>
             <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
               Are you sure you want to delete the project <strong>{selectedProjectToDelete.name}</strong>?
             </p>
-            <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-danger)", lineHeight: "1.4" }}>
+            <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-destructive)", lineHeight: "1.4" }}>
               <strong>WARNING:</strong> This action cannot be undone. All folders and physical files inside this project will be permanently deleted from Cloudflare R2 and the database.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
@@ -3750,7 +3750,7 @@ function DrivePageContent() {
               <button 
                 onClick={handleDeleteProject} 
                 className="btn-primary" 
-                style={{ backgroundColor: "var(--accent-danger)" }}
+                style={{ backgroundColor: "var(--accent-destructive)" }}
                 autoFocus
               >
                 Delete Permanently
@@ -3763,14 +3763,14 @@ function DrivePageContent() {
       {confirmModal && confirmModal.open && (
         <div className="modal-overlay">
           <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700", color: confirmModal.confirmColor || "var(--accent-danger)" }}>
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: confirmModal.confirmColor || "var(--accent-destructive)" }}>
               {confirmModal.title}
             </h3>
             <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
               {confirmModal.message}
             </p>
             {confirmModal.warning && (
-              <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-danger)", lineHeight: "1.4" }}>
+              <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-destructive)", lineHeight: "1.4" }}>
                 <strong>WARNING:</strong> {confirmModal.warning}
               </div>
             )}
@@ -3788,7 +3788,7 @@ function DrivePageContent() {
                   setConfirmModal(null);
                 }} 
                 className="btn-primary" 
-                style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-danger)" }}
+                style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-destructive)" }}
                 autoFocus
               >
                 {confirmModal.confirmText || "Confirm"}
