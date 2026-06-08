@@ -444,7 +444,7 @@ export default function AdminPage() {
             {filteredUsers.length === 0 ? (
               <p style={{ color: "#71717a", fontSize: "0.9rem", padding: "16px 0" }}>No users match the selected status filter.</p>
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <div className="scrollable-table-container">
                 <table className="modern-table">
                   <thead>
                     <tr>
@@ -568,7 +568,7 @@ export default function AdminPage() {
               {invites.length === 0 ? (
                 <p style={{ color: "#71717a", fontSize: "0.9rem" }}>No pending invitations found.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
+                <div className="scrollable-table-container">
                   <table className="modern-table">
                     <thead>
                       <tr>
@@ -667,7 +667,7 @@ export default function AdminPage() {
               {allLinks.length === 0 ? (
                 <p style={{ color: "#71717a", fontSize: "0.9rem" }}>No active shared links found.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
+                <div className="scrollable-table-container">
                   <table className="modern-table">
                     <thead>
                       <tr>
@@ -739,7 +739,7 @@ export default function AdminPage() {
 
         {/* TAB 4: SYSTEM STORAGE & USAGE */}
         {activeTab === "usage" && (
-          <div className="tab-content active" style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+          <div className="tab-content active" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             
             {/* Main Title Section */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -914,6 +914,41 @@ export default function AdminPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* CARD 5: Total Projects */}
+                    <div style={{
+                      background: "rgba(24, 24, 27, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.05)",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "130px",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)"
+                    }} className="immich-stat-card">
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ 
+                          width: "36px", 
+                          height: "36px", 
+                          borderRadius: "50%", 
+                          background: "rgba(129, 140, 248, 0.1)", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center" 
+                        }}>
+                          <Activity size={18} style={{ color: "#818cf8" }} />
+                        </div>
+                        <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#a1a1aa" }}>Active Projects</span>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginTop: "16px" }}>
+                        {renderImmichStatNumber(
+                          usageStats.projects?.totalCount || 0, 
+                          12, 
+                          "PROJECTS"
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -927,13 +962,14 @@ export default function AdminPage() {
                     Track actual disk storage consumed, files uploaded, and custom workspace quotas assigned to each user.
                   </p>
 
-                  <div style={{ overflowX: "auto" }}>
+                  <div className="scrollable-table-container">
                     <table className="modern-table">
                       <thead>
                         <tr>
                           <th>User</th>
                           <th>Role</th>
                           <th>Files Uploaded</th>
+                          <th>Projects Created</th>
                           <th>Storage Used</th>
                           <th>Quota Limit</th>
                           <th style={{ width: "220px" }}>Quota Percentage</th>
@@ -962,6 +998,9 @@ export default function AdminPage() {
                               </td>
                               <td style={{ color: "#e4e4e7", fontWeight: 500 }}>
                                 {u.itemsCount}
+                              </td>
+                              <td style={{ color: "#818cf8", fontWeight: 500 }}>
+                                {u.projectsCount || 0}
                               </td>
                               <td style={{ color: "#38bdf8", fontWeight: 500 }}>
                                 {sizeUsedReadable}

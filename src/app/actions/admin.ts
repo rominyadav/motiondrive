@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { invitations, user, sharedLinks, assets } from "@/db/schema";
+import { invitations, user, sharedLinks, assets, projects } from "@/db/schema";
 import { requireAdmin, getSession } from "@/lib/auth-server";
 import { eq, desc } from "drizzle-orm";
 import { resend } from "@/lib/resend";
@@ -284,6 +284,7 @@ export interface UserUsage {
   storageLimit: number;
   sizeUsed: number;
   itemsCount: number;
+  projectsCount: number;
 }
 
 export interface PlatformUsageStats {
@@ -299,6 +300,9 @@ export interface PlatformUsageStats {
   archive: {
     totalSize: number;
     totalItems: number;
+  };
+  projects: {
+    totalCount: number;
   };
 }
 
@@ -335,6 +339,17 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
     }
   }
 
+  // Projects counting
+  const allProjects = await db.select().from(projects);
+  const totalProjects = allProjects.length;
+  const userProjectsMap: Record<string, number> = {};
+
+  for (const proj of allProjects) {
+    if (proj.userId) {
+      userProjectsMap[proj.userId] = (userProjectsMap[proj.userId] || 0) + 1;
+    }
+  }
+
   const allUsers = await db.select().from(user);
   const perUserUsage: UserUsage[] = allUsers.map((u) => {
     const usage = userUsageMap[u.id] || { size: 0, items: 0 };
@@ -347,6 +362,7 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
       storageLimit: u.storageLimit,
       sizeUsed: usage.size,
       itemsCount: usage.items,
+      projectsCount: userProjectsMap[u.id] || 0,
     };
   });
 
@@ -369,6 +385,9 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
     archive: {
       totalSize: archiveUsage.totalSize,
       totalItems: archiveUsage.totalItems,
+    },
+    projects: {
+      totalCount: totalProjects,
     },
   };
 }

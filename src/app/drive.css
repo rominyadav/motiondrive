@@ -1806,3 +1806,77 @@
   }
 }
 
+/* ==========================================
+   MODERN COMPACT TABLES & SCROLL CONTAINERS
+   ========================================== */
+.modern-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.modern-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: #71717a;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.modern-table td {
+  padding: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  font-size: 0.85rem;
+  vertical-align: middle;
+}
+
+.modern-table tr:last-child td {
+  border-bottom: none;
+}
+
+.modern-table tr:hover {
+  background: rgba(255, 255, 255, 0.01);
+}
+
+/* Independent Scrollable Table Containers */
+.scrollable-table-container {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 480px; /* Restrict height so content is compact */
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  background: rgba(18, 18, 21, 0.2);
+}
+
+/* Sticky modern table headers */
+.scrollable-table-container .modern-table thead th {
+  position: sticky;
+  top: 0;
+  background: #121215; /* solid dark background so text doesn't overlap on scroll */
+  z-index: 2;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Premium Slim Scrollbars for Webkit browsers */
+.scrollable-table-container::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollable-table-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.01);
+  border-radius: 3px;
+}
+
+.scrollable-table-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.scrollable-table-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+
