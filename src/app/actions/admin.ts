@@ -37,8 +37,8 @@ export async function inviteUser(email: string, role: "admin" | "manager" | "sta
   // Send email if Resend is configured, otherwise log the link
   if (resend) {
     try {
-      await resend.emails.send({
-        from: "Motionsewa Drive <onboarding@resend.dev>", // Replace with your domain once verified
+      const { data, error } = await resend.emails.send({
+        from: process.env.FROM_EMAIL || "Motionsewa Drive <onboarding@resend.dev>",
         to: email.toLowerCase(),
         subject: "Invitation to join Motionsewa Web Drive",
         html: `
@@ -63,8 +63,16 @@ export async function inviteUser(email: string, role: "admin" | "manager" | "sta
           </div>
         `,
       });
-    } catch (error) {
+
+      if (error) {
+        console.error("[Resend Error Payload]:", error);
+        throw new Error(error.message || "Resend returned an API error");
+      }
+
+      console.log(`[Resend Success]: Invitation successfully sent to ${email}. Message ID: ${data?.id}`);
+    } catch (error: any) {
       console.error("Failed to send email via Resend", error);
+      throw new Error(error.message || "Failed to send email via Resend");
     }
   } else {
     console.log("\n========================================");
