@@ -192,10 +192,95 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="admin-body" style={{ alignItems: "center", justifyContent: "center" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-          <div className="spin-anim" style={{ width: "32px", height: "32px", border: "2px solid #6366f1", borderTopColor: "transparent", borderRadius: "50%" }} />
-          <h3 style={{ fontSize: "1rem", fontWeight: 500, color: "#a1a1aa" }}>Verifying administrative permissions...</h3>
+      <div className="admin-body" style={{ 
+        alignItems: "center", 
+        justifyContent: "center",
+        position: "relative",
+        background: "radial-gradient(circle at center, rgba(99, 102, 241, 0.08) 0%, #09090b 70%)",
+        flexDirection: "column",
+        minHeight: "100vh"
+      }}>
+        {/* Glowing background circle for visual depth */}
+        <div style={{
+          position: "absolute",
+          width: "300px",
+          height: "300px",
+          background: "radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%)",
+          filter: "blur(50px)",
+          top: "calc(50% - 150px)",
+          left: "calc(50% - 150px)",
+          animation: "pulse-glow 3s infinite ease-in-out",
+          pointerEvents: "none"
+        }} />
+
+        <div className="glass animate-fade-in" style={{
+          padding: "48px",
+          borderRadius: "24px",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 0 50px rgba(99, 102, 241, 0.08)",
+          maxWidth: "420px",
+          textAlign: "center",
+          zIndex: 10,
+          background: "rgba(18, 18, 21, 0.7)",
+          backdropFilter: "blur(12px)"
+        }}>
+          {/* Circular progress loader container */}
+          <div style={{ position: "relative", width: "72px", height: "72px", marginBottom: "28px" }}>
+            {/* outer track */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid rgba(255, 255, 255, 0.03)"
+            }} />
+            {/* inner spinning glowing arc */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid transparent",
+              borderTopColor: "#6366f1",
+              borderRightColor: "#3b82f6",
+              animation: "spin 1.2s infinite cubic-bezier(0.4, 0.1, 0.6, 1)",
+              boxShadow: "0 0 15px rgba(99, 102, 241, 0.25)"
+            }} />
+            {/* Center glowing dot */}
+            <div style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "12px",
+              height: "12px",
+              borderRadius: "50%",
+              backgroundColor: "#6366f1",
+              boxShadow: "0 0 12px #6366f1"
+            }} />
+          </div>
+
+          <h2 style={{ 
+            fontSize: "22px", 
+            fontWeight: "800", 
+            letterSpacing: "-0.5px", 
+            marginBottom: "8px",
+            background: "linear-gradient(135deg, #ffffff, #a1a1aa)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent"
+          }}>
+            Workspace Control
+          </h2>
+          <p style={{ 
+            fontSize: "14px", 
+            color: "#a1a1aa",
+            animation: "pulse-glow 2s infinite ease-in-out",
+            fontWeight: "500",
+            letterSpacing: "0.2px"
+          }}>
+            Verifying administrative permissions...
+          </p>
         </div>
       </div>
     );
