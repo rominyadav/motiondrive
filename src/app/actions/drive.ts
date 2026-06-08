@@ -1471,3 +1471,84 @@ export async function getUserStorageStats() {
     available: Math.max(0, limit - used),
   };
 }
+
+/**
+ * Calculates in-depth personal usage metrics including folder counts, projects created, and per-project storage footprints.
+ */
+export async function getUserDetailedUsageStats() {
+  const session = await requireApprovedUser();
+  const userId = session.user.id;
+
+  const [userRecord] = await db
+    .select({ storageLimit: user.storageLimit })
+    .from(user)
+    .where(eq(user.id, userId));
+
+  const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
+
+  // Fetch all user's completed assets
+  const userAssets = await db
+    .select({
+      id: assets.id,
+      size: assets.size,
+      projectId: assets.projectId,
+      folderId: assets.folderId,
+    })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.uploadedBy, userId),
+        eq(assets.status, "completed")
+      )
+    );
+
+  const used = userAssets.reduce((sum, asset) => sum + asset.size, 0);
+  const totalFiles = userAssets.length;
+
+  // Count user-owned folders
+  const userFolders = await db
+    .select()
+    .from(folders)
+    .where(eq(folders.userId, userId));
+  const totalFolders = userFolders.length;
+
+  // Count user-created projects
+  const userProjects = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.userId, userId));
+  const totalProjects = userProjects.length;
+
+  // Aggregate assets size and counts by projectId
+  const projectStatsMap: Record<string, { size: number; count: number }> = {};
+  for (const asset of userAssets) {
+    if (asset.projectId) {
+      if (!projectStatsMap[asset.projectId]) {
+        projectStatsMap[asset.projectId] = { size: 0, count: 0 };
+      }
+      projectStatsMap[asset.projectId].size += asset.size;
+      projectStatsMap[asset.projectId].count += 1;
+    }
+  }
+
+  const projectBreakdown = userProjects.map((proj) => {
+    const stats = projectStatsMap[proj.id] || { size: 0, count: 0 };
+    return {
+      id: proj.id,
+      name: proj.name,
+      clientName: proj.clientName,
+      sizeUsed: stats.size,
+      filesCount: stats.count,
+    };
+  });
+
+  return {
+    used,
+    limit,
+    available: Math.max(0, limit - used),
+    totalFiles,
+    totalFolders,
+    totalProjects,
+    projectBreakdown,
+  };
+}

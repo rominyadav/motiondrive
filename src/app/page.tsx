@@ -33,7 +33,8 @@ import {
   bulkDeleteItems,
   bulkMoveItems,
   bulkCopyItems,
-  getUserStorageStats
+  getUserStorageStats,
+  getUserDetailedUsageStats
 } from "@/app/actions/drive";
 import {
   createSharedLink,
@@ -77,7 +78,8 @@ import {
   Square,
   FolderInput,
   Copy,
-  Minus
+  Minus,
+  Activity
 } from "lucide-react";
 import Link from "next/link";
 import "./drive.css";
@@ -85,6 +87,7 @@ import "./drive.css";
 function DrivePageContent() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showDetailedUsageModal, setShowDetailedUsageModal] = useState(false);
   
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -154,6 +157,13 @@ function DrivePageContent() {
     queryKey: ["storageStats"],
     queryFn: getUserStorageStats,
     enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive" && explorerMode !== "links",
+  });
+
+  // TanStack Query for Detailed Storage Analytics (only loaded when modal is shown)
+  const { data: detailedUsageStats = null, isLoading: detailedUsageLoading, refetch: refetchDetailedUsageStats } = useQuery({
+    queryKey: ["detailedUsageStats"],
+    queryFn: getUserDetailedUsageStats,
+    enabled: !!session && showDetailedUsageModal,
   });
 
   // TanStack Query for Shared Links Management
@@ -1009,7 +1019,7 @@ function DrivePageContent() {
       message: `Are you sure you want to delete this file from the ${targetBucketText}?`,
       warning: "This action cannot be undone.",
       confirmText: "Delete Permanently",
-      confirmColor: "var(--accent-danger)",
+      confirmColor: "var(--accent-destructive)",
       onConfirm: async () => {
         const taskLabel = `Deleting ${resolvedFilename}`;
         
@@ -1061,7 +1071,7 @@ function DrivePageContent() {
       message: `Are you sure you want to delete folder "${resolvedFolderName}"?`,
       warning: "All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.",
       confirmText: "Delete Folder Permanently",
-      confirmColor: "var(--accent-danger)",
+      confirmColor: "var(--accent-destructive)",
       onConfirm: async () => {
         const taskLabel = `Deleting folder "${resolvedFolderName}"`;
         
@@ -1186,7 +1196,7 @@ function DrivePageContent() {
       message: `Are you sure you want to permanently delete the ${totalCount} selected item(s) from the Web Drive and Cloudflare R2?`,
       warning: "This action cannot be undone.",
       confirmText: `Delete ${totalCount} Item(s)`,
-      confirmColor: "var(--accent-danger)",
+      confirmColor: "var(--accent-destructive)",
       onConfirm: async () => {
         const taskLabel = `Deleting ${totalCount} selected item(s)`;
         const assetIdsToDelete = Array.from(selectedAssetIds);
@@ -2242,11 +2252,14 @@ function DrivePageContent() {
         {/* Storage Indicator */}
         {storageStats && (
           <div style={{
-            padding: "16px",
-            background: "rgba(255, 255, 255, 0.02)",
-            border: "1px solid var(--border-color)",
-            borderRadius: "12px",
-            margin: "0 16px 16px 16px",
+            padding: "16px 24px",
+            background: "rgba(255, 255, 255, 0.015)",
+            borderTop: "1px solid var(--border-color)",
+            borderBottom: "1px solid var(--border-color)",
+            borderLeft: "none",
+            borderRight: "none",
+            borderRadius: "0px",
+            margin: "12px 0 16px 0",
             fontSize: "12px",
             flexShrink: 0
           }}>
@@ -2275,6 +2288,31 @@ function DrivePageContent() {
               <span>{((storageStats.used / storageStats.limit) * 100).toFixed(0)}% Used</span>
               <span>{(storageStats.available / (1024 * 1024 * 1024)).toFixed(1)} GB Free</span>
             </div>
+
+            <button 
+              onClick={() => setShowDetailedUsageModal(true)}
+              style={{
+                width: "100%",
+                background: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid rgba(255, 255, 255, 0.06)",
+                borderRadius: "8px",
+                color: "#a1a1aa",
+                fontSize: "11px",
+                fontWeight: "600",
+                padding: "8px 12px",
+                marginTop: "14px",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px"
+              }}
+              className="usage-details-btn"
+            >
+              <Activity size={12} style={{ color: "var(--accent-blue)" }} />
+              <span>Storage Analytics</span>
+            </button>
           </div>
         )}
 
@@ -2646,19 +2684,19 @@ function DrivePageContent() {
                     const isActive = !isExpired && !isRevoked;
 
                     let statusBadge = (
-                      <span className="badge success" style={{ background: "rgba(16, 185, 129, 0.1)", color: "#10b981", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                      <span className="badge success" style={{ color: "#10b981", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                         Active
                       </span>
                     );
                     if (isRevoked) {
                       statusBadge = (
-                        <span className="badge danger" style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                        <span className="badge danger" style={{ color: "var(--accent-destructive)", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                           Revoked
                         </span>
                       );
                     } else if (isExpired) {
                       statusBadge = (
-                        <span className="badge warning" style={{ background: "rgba(245, 158, 11, 0.1)", color: "#f59e0b", padding: "4px 8px", borderRadius: "12px", fontSize: "11px", fontWeight: "600", display: "inline-block" }}>
+                        <span className="badge warning" style={{ color: "#f59e0b", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                           Expired
                         </span>
                       );
@@ -3259,6 +3297,195 @@ function DrivePageContent() {
         </div>
       )}
 
+      {/* DETAILED USER STORAGE ANALYTICS MODAL */}
+      {showDetailedUsageModal && (
+        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+          <div className="modal" style={{ maxWidth: "780px", width: "100%", padding: "32px", background: "#0c0c0e" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <div>
+                <h3 style={{ fontSize: "20px", fontWeight: "800", color: "#ffffff", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <Activity size={22} style={{ color: "var(--accent-blue)" }} />
+                  <span>Storage & Usage Analytics</span>
+                </h3>
+                <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
+                  Real-time analytics of your personal workspace storage and items.
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowDetailedUsageModal(false)} 
+                className="btn-secondary" 
+                style={{ padding: "8px 12px", borderRadius: "8px", minWidth: "auto", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)", color: "#a1a1aa" }}
+              >
+                Close
+              </button>
+            </div>
+
+            {detailedUsageLoading || !detailedUsageStats ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: "16px" }}>
+                <div style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "50%",
+                  border: "3px solid var(--accent-blue)",
+                  borderTopColor: "transparent",
+                  animation: "spin 1.2s infinite linear"
+                }} />
+                <p style={{ color: "var(--text-secondary)", fontSize: "13px" }}>Calculating storage statistics & project breakdown...</p>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
+                {/* IMMICH INSPIRED NUMERIC STATS GRID */}
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                  gap: "16px"
+                }}>
+                  {/* CARD 1: Space Used */}
+                  <div style={{
+                    background: "rgba(24, 24, 27, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.04)",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minHeight: "100px"
+                  }}>
+                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Storage Space</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#38bdf8", alignSelf: "flex-end", marginTop: "12px" }}>
+                      {(detailedUsageStats.used / (1024 * 1024 * 1024)).toFixed(1)} <span style={{ fontSize: "11px", opacity: 0.5 }}>GiB</span>
+                    </span>
+                  </div>
+
+                  {/* CARD 2: Files Count */}
+                  <div style={{
+                    background: "rgba(24, 24, 27, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.04)",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minHeight: "100px"
+                  }}>
+                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Files</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#818cf8", alignSelf: "flex-end", marginTop: "12px" }}>
+                      {detailedUsageStats.totalFiles} <span style={{ fontSize: "11px", opacity: 0.5 }}>FILES</span>
+                    </span>
+                  </div>
+
+                  {/* CARD 3: Folders Count */}
+                  <div style={{
+                    background: "rgba(24, 24, 27, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.04)",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minHeight: "100px"
+                  }}>
+                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Folders</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#10b981", alignSelf: "flex-end", marginTop: "12px" }}>
+                      {detailedUsageStats.totalFolders} <span style={{ fontSize: "11px", opacity: 0.5 }}>DIRS</span>
+                    </span>
+                  </div>
+
+                  {/* CARD 4: Projects Created */}
+                  <div style={{
+                    background: "rgba(24, 24, 27, 0.4)",
+                    border: "1px solid rgba(255, 255, 255, 0.04)",
+                    borderRadius: "12px",
+                    padding: "16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    minHeight: "100px"
+                  }}>
+                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>My Projects</span>
+                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#fbbf24", alignSelf: "flex-end", marginTop: "12px" }}>
+                      {detailedUsageStats.totalProjects} <span style={{ fontSize: "11px", opacity: 0.5 }}>PROJS</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* PROJECT DETAILED BREAKDOWN LIST */}
+                <div>
+                  <h4 style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    Storage breakdown by project
+                  </h4>
+                  {detailedUsageStats.projectBreakdown.length === 0 ? (
+                    <p style={{ fontSize: "12px", color: "var(--text-muted)", background: "rgba(255,255,255,0.01)", padding: "16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.03)" }}>
+                      You haven't created any projects yet, or they have no completed uploads.
+                    </p>
+                  ) : (
+                    <div style={{ maxHeight: "280px" }} className="scrollable-table-container">
+                      <table className="modern-table">
+                        <thead>
+                          <tr>
+                            <th>Project Name</th>
+                            <th>Client</th>
+                            <th style={{ textAlign: "center" }}>Files Count</th>
+                            <th>Storage Occupied</th>
+                            <th>Workspace Ratio</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailedUsageStats.projectBreakdown.map((proj: any) => {
+                            const pct = Math.min(100, Math.max(0, (proj.sizeUsed / detailedUsageStats.limit) * 100));
+                            const sizeReadable = proj.sizeUsed > 0 
+                              ? (proj.sizeUsed / (1024 * 1024 * 1024)).toFixed(2) + " GiB" 
+                              : "0.00 GiB";
+                            return (
+                              <tr key={proj.id}>
+                                <td>
+                                  <span style={{ fontWeight: "600", color: "#e4e4e7" }}>{proj.name}</span>
+                                </td>
+                                <td>
+                                  <span style={{ color: "var(--text-secondary)" }}>{proj.clientName || "—"}</span>
+                                </td>
+                                <td style={{ textAlign: "center", color: "#a1a1aa" }}>
+                                  {proj.filesCount}
+                                </td>
+                                <td style={{ color: "#38bdf8", fontWeight: "500" }}>
+                                  {sizeReadable}
+                                </td>
+                                <td>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <div style={{ 
+                                      flex: 1, 
+                                      height: "5px", 
+                                      background: "rgba(255, 255, 255, 0.05)", 
+                                      borderRadius: "3px", 
+                                      overflow: "hidden" 
+                                    }}>
+                                      <div style={{ 
+                                        width: `${pct}%`, 
+                                        height: "100%", 
+                                        background: "linear-gradient(90deg, var(--accent-blue), var(--accent-indigo))",
+                                        borderRadius: "3px" 
+                                      }} />
+                                    </div>
+                                    <span style={{ fontSize: "11px", color: "var(--text-muted)", width: "35px", textAlign: "right" }}>
+                                      {pct.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+
       {/* CREATE PROJECT POPUP MODAL */}
       {projectModalOpen && (
         <div className="modal-overlay">
@@ -3506,11 +3733,11 @@ function DrivePageContent() {
       {deleteProjectModalOpen && selectedProjectToDelete && (
         <div className="modal-overlay">
           <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "var(--accent-danger)" }}>Delete Project?</h3>
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "var(--accent-destructive)" }}>Delete Project?</h3>
             <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
               Are you sure you want to delete the project <strong>{selectedProjectToDelete.name}</strong>?
             </p>
-            <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-danger)", lineHeight: "1.4" }}>
+            <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-destructive)", lineHeight: "1.4" }}>
               <strong>WARNING:</strong> This action cannot be undone. All folders and physical files inside this project will be permanently deleted from Cloudflare R2 and the database.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
@@ -3523,7 +3750,7 @@ function DrivePageContent() {
               <button 
                 onClick={handleDeleteProject} 
                 className="btn-primary" 
-                style={{ backgroundColor: "var(--accent-danger)" }}
+                style={{ backgroundColor: "var(--accent-destructive)" }}
                 autoFocus
               >
                 Delete Permanently
@@ -3536,14 +3763,14 @@ function DrivePageContent() {
       {confirmModal && confirmModal.open && (
         <div className="modal-overlay">
           <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700", color: confirmModal.confirmColor || "var(--accent-danger)" }}>
+            <h3 style={{ fontSize: "18px", fontWeight: "700", color: confirmModal.confirmColor || "var(--accent-destructive)" }}>
               {confirmModal.title}
             </h3>
             <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
               {confirmModal.message}
             </p>
             {confirmModal.warning && (
-              <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-danger)", lineHeight: "1.4" }}>
+              <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-destructive)", lineHeight: "1.4" }}>
                 <strong>WARNING:</strong> {confirmModal.warning}
               </div>
             )}
@@ -3561,7 +3788,7 @@ function DrivePageContent() {
                   setConfirmModal(null);
                 }} 
                 className="btn-primary" 
-                style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-danger)" }}
+                style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-destructive)" }}
                 autoFocus
               >
                 {confirmModal.confirmText || "Confirm"}

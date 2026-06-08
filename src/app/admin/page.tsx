@@ -13,7 +13,8 @@ import {
   revokeInvitation,
   listAllSharedLinks,
   adminRevokeSharedLink,
-  adminExtendSharedLink
+  adminExtendSharedLink,
+  getPlatformUsageStats
 } from "@/app/actions/admin";
 import { 
   Users, 
@@ -28,7 +29,11 @@ import {
   Clock, 
   Share2,
   Calendar,
-  Lock
+  Lock,
+  HardDrive,
+  Database,
+  Activity,
+  FileText
 } from "lucide-react";
 import Link from "next/link";
 import "./admin.css";
@@ -41,8 +46,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   
   // Tabs and Filters State
-  const [activeTab, setActiveTab] = useState<"users" | "invites" | "shared_links">("users");
+  const [activeTab, setActiveTab] = useState<"users" | "invites" | "shared_links" | "usage">("users");
   const [userFilter, setUserFilter] = useState<"all" | "approved" | "pending" | "suspended">("all");
+  const [usageStats, setUsageStats] = useState<any>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "manager" | "staff">("staff");
@@ -65,6 +72,18 @@ export default function AdminPage() {
   const showToast = (msg: string, type: "info" | "success" | "error" = "info") => {
     setToastMessage(msg);
     setToastType(type);
+  };
+
+  const fetchUsageStats = async () => {
+    setUsageLoading(true);
+    try {
+      const stats = await getPlatformUsageStats();
+      setUsageStats(stats);
+    } catch (err) {
+      console.error("Failed to load platform usage stats", err);
+    } finally {
+      setUsageLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -98,6 +117,10 @@ export default function AdminPage() {
           const loadedLinks = await listAllSharedLinks();
           setAllLinks(loadedLinks);
         }
+
+        // Fetch usage stats
+        const stats = await getPlatformUsageStats();
+        setUsageStats(stats);
       } catch (err) {
         console.error("Failed to load admin data", err);
       } finally {
@@ -192,16 +215,127 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div className="admin-body" style={{ alignItems: "center", justifyContent: "center" }}>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-          <div className="spin-anim" style={{ width: "32px", height: "32px", border: "2px solid #6366f1", borderTopColor: "transparent", borderRadius: "50%" }} />
-          <h3 style={{ fontSize: "1rem", fontWeight: 500, color: "#a1a1aa" }}>Verifying administrative permissions...</h3>
+      <div className="admin-body" style={{ 
+        alignItems: "center", 
+        justifyContent: "center",
+        position: "relative",
+        background: "radial-gradient(circle at center, rgba(99, 102, 241, 0.08) 0%, #09090b 70%)",
+        flexDirection: "column",
+        minHeight: "100vh"
+      }}>
+        {/* Glowing background circle for visual depth */}
+        <div style={{
+          position: "absolute",
+          width: "300px",
+          height: "300px",
+          background: "radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%)",
+          filter: "blur(50px)",
+          top: "calc(50% - 150px)",
+          left: "calc(50% - 150px)",
+          animation: "pulse-glow 3s infinite ease-in-out",
+          pointerEvents: "none"
+        }} />
+
+        <div className="glass animate-fade-in" style={{
+          padding: "48px",
+          borderRadius: "24px",
+          border: "1px solid rgba(255, 255, 255, 0.08)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 0 50px rgba(99, 102, 241, 0.08)",
+          maxWidth: "420px",
+          textAlign: "center",
+          zIndex: 10,
+          background: "rgba(18, 18, 21, 0.7)",
+          backdropFilter: "blur(12px)"
+        }}>
+          {/* Circular progress loader container */}
+          <div style={{ position: "relative", width: "72px", height: "72px", marginBottom: "28px" }}>
+            {/* outer track */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid rgba(255, 255, 255, 0.03)"
+            }} />
+            {/* inner spinning glowing arc */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid transparent",
+              borderTopColor: "#6366f1",
+              borderRightColor: "#3b82f6",
+              animation: "spin 1.2s infinite cubic-bezier(0.4, 0.1, 0.6, 1)",
+              boxShadow: "0 0 15px rgba(99, 102, 241, 0.25)"
+            }} />
+            {/* Center glowing dot */}
+            <div style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "12px",
+              height: "12px",
+              borderRadius: "50%",
+              backgroundColor: "#6366f1",
+              boxShadow: "0 0 12px #6366f1"
+            }} />
+          </div>
+
+          <h2 style={{ 
+            fontSize: "22px", 
+            fontWeight: "800", 
+            letterSpacing: "-0.5px", 
+            marginBottom: "8px",
+            background: "linear-gradient(135deg, #ffffff, #a1a1aa)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent"
+          }}>
+            Workspace Control
+          </h2>
+          <p style={{ 
+            fontSize: "14px", 
+            color: "#a1a1aa",
+            animation: "pulse-glow 2s infinite ease-in-out",
+            fontWeight: "500",
+            letterSpacing: "0.2px"
+          }}>
+            Verifying administrative permissions...
+          </p>
         </div>
       </div>
     );
   }
 
   const isAdmin = currentUser?.role === "admin";
+
+  const renderImmichStatNumber = (num: number, padLength = 12, suffix = "") => {
+    const str = num.toString();
+    if (str.length >= padLength) {
+      return (
+        <span style={{ fontFamily: "monospace", letterSpacing: "1px", fontSize: "1.8rem", fontWeight: "bold" }}>
+          {str} {suffix && <span style={{ fontSize: "0.8rem", opacity: 0.5, marginLeft: "4px" }}>{suffix}</span>}
+        </span>
+      );
+    }
+    const padCount = padLength - str.length;
+    const padding = "0".repeat(padCount);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+        {suffix && (
+          <span style={{ fontSize: "0.75rem", fontFamily: "monospace", color: "#a1a1aa", opacity: 0.7, marginBottom: "-2px" }}>
+            {suffix}
+          </span>
+        )}
+        <span style={{ fontFamily: "monospace", letterSpacing: "2px", fontSize: "1.8rem", fontWeight: "700" }}>
+          <span style={{ color: "rgba(255, 255, 255, 0.08)" }}>{padding}</span>
+          <span style={{ color: "#38bdf8", textShadow: "0 0 10px rgba(56, 189, 248, 0.2)" }}>{str}</span>
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="admin-body">
@@ -261,51 +395,56 @@ export default function AdminPage() {
                 <span>Shared Links (Restricted)</span>
               </div>
             )}
+            <button 
+              className={`admin-tab ${activeTab === "usage" ? "active" : ""}`}
+              onClick={() => setActiveTab("usage")}
+            >
+              <Activity size={16} />
+              <span>System Storage & Usage</span>
+            </button>
           </div>
-
-          {/* Render search/filter dynamically for active tabs */}
-          {activeTab === "users" && (
-            <div className="filter-pills">
-              <button 
-                className={`filter-pill ${userFilter === "all" ? "active" : ""}`}
-                onClick={() => setUserFilter("all")}
-              >
-                All ({users.length})
-              </button>
-              <button 
-                className={`filter-pill ${userFilter === "approved" ? "active" : ""}`}
-                onClick={() => setUserFilter("approved")}
-              >
-                Approved ({users.filter(u => u.status === "approved").length})
-              </button>
-              <button 
-                className={`filter-pill ${userFilter === "pending" ? "active" : ""}`}
-                onClick={() => setUserFilter("pending")}
-              >
-                Pending ({users.filter(u => u.status === "pending").length})
-              </button>
-              <button 
-                className={`filter-pill ${userFilter === "suspended" ? "active" : ""}`}
-                onClick={() => setUserFilter("suspended")}
-              >
-                Suspended ({users.filter(u => u.status === "suspended").length})
-              </button>
-            </div>
-          )}
         </div>
 
         {/* TAB 1: USERS DIRECTORY */}
         <div className={`tab-content ${activeTab === "users" ? "active" : ""}`}>
           <div className="panel-card">
-            <h2 className="panel-card-title">
-              <Users size={18} style={{ color: "#6366f1" }} />
-              <span>Registered Users Directory</span>
-            </h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
+              <h2 className="panel-card-title" style={{ margin: 0 }}>
+                <Users size={18} style={{ color: "#6366f1" }} />
+                <span>Registered Users Directory</span>
+              </h2>
+              <div className="filter-pills">
+                <button 
+                  className={`filter-pill ${userFilter === "all" ? "active" : ""}`}
+                  onClick={() => setUserFilter("all")}
+                >
+                  All ({users.length})
+                </button>
+                <button 
+                  className={`filter-pill ${userFilter === "approved" ? "active" : ""}`}
+                  onClick={() => setUserFilter("approved")}
+                >
+                  Approved ({users.filter(u => u.status === "approved").length})
+                </button>
+                <button 
+                  className={`filter-pill ${userFilter === "pending" ? "active" : ""}`}
+                  onClick={() => setUserFilter("pending")}
+                >
+                  Pending ({users.filter(u => u.status === "pending").length})
+                </button>
+                <button 
+                  className={`filter-pill ${userFilter === "suspended" ? "active" : ""}`}
+                  onClick={() => setUserFilter("suspended")}
+                >
+                  Suspended ({users.filter(u => u.status === "suspended").length})
+                </button>
+              </div>
+            </div>
 
             {filteredUsers.length === 0 ? (
               <p style={{ color: "#71717a", fontSize: "0.9rem", padding: "16px 0" }}>No users match the selected status filter.</p>
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <div className="scrollable-table-container">
                 <table className="modern-table">
                   <thead>
                     <tr>
@@ -429,7 +568,7 @@ export default function AdminPage() {
               {invites.length === 0 ? (
                 <p style={{ color: "#71717a", fontSize: "0.9rem" }}>No pending invitations found.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
+                <div className="scrollable-table-container">
                   <table className="modern-table">
                     <thead>
                       <tr>
@@ -528,7 +667,7 @@ export default function AdminPage() {
               {allLinks.length === 0 ? (
                 <p style={{ color: "#71717a", fontSize: "0.9rem" }}>No active shared links found.</p>
               ) : (
-                <div style={{ overflowX: "auto" }}>
+                <div className="scrollable-table-container">
                   <table className="modern-table">
                     <thead>
                       <tr>
@@ -570,7 +709,7 @@ export default function AdminPage() {
                             </td>
 
                             <td>
-                              <span className={`soft-badge ${status === "active" ? "approved" : status === "expired" ? "pending" : "suspended"}`}>
+                              <span className={`soft-badge ${status === "active" ? "approved" : status === "expired" ? "pending" : "revoked"}`}>
                                 {status}
                               </span>
                             </td>
@@ -595,6 +734,313 @@ export default function AdminPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* TAB 4: SYSTEM STORAGE & USAGE */}
+        {activeTab === "usage" && (
+          <div className="tab-content active" style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+            
+            {/* Main Title Section */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <h2 className="panel-card-title" style={{ fontSize: "1.5rem", marginBottom: "4px" }}>
+                  <HardDrive size={22} style={{ color: "#06b6d4" }} />
+                  <span>Platform Storage & Server Stats</span>
+                </h2>
+                <p style={{ fontSize: "0.85rem", color: "#71717a" }}>
+                  Real-time active storage usage across all object storage systems and user workspaces.
+                </p>
+              </div>
+              <button 
+                onClick={fetchUsageStats} 
+                className="action-btn extend" 
+                style={{ padding: "8px 16px", borderRadius: "8px", fontSize: "0.8rem" }}
+                disabled={usageLoading}
+              >
+                {usageLoading ? "Refreshing..." : "Refresh Stats"}
+              </button>
+            </div>
+
+            {usageLoading || !usageStats ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "80px 0", gap: "16px" }}>
+                <div className="spin-anim" style={{ width: "40px", height: "40px", border: "3px solid #06b6d4", borderTopColor: "transparent", borderRadius: "50%" }} />
+                <p style={{ color: "#71717a", fontSize: "0.9rem" }}>Fetching real-time S3 bucket and database storage stats...</p>
+              </div>
+            ) : (
+              <>
+                {/* IMMICH INSPIRED SERVER STATS ROW */}
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <h3 style={{ fontSize: "1.05rem", fontWeight: 600, color: "#e4e4e7" }}>Total usage</h3>
+                  
+                  <div style={{ 
+                    display: "grid", 
+                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", 
+                    gap: "20px" 
+                  }}>
+                    {/* CARD 1: Personal Drive Items */}
+                    <div style={{
+                      background: "rgba(24, 24, 27, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.05)",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "130px",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)",
+                      transition: "transform 0.2s ease, border-color 0.2s ease"
+                    }} className="immich-stat-card">
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ 
+                          width: "36px", 
+                          height: "36px", 
+                          borderRadius: "50%", 
+                          background: "rgba(56, 189, 248, 0.1)", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center" 
+                        }}>
+                          <FileText size={18} style={{ color: "#38bdf8" }} />
+                        </div>
+                        <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#a1a1aa" }}>Personal Drive Items</span>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginTop: "16px" }}>
+                        {renderImmichStatNumber(usageStats.personal.totalItems, 12, "ITEMS")}
+                      </div>
+                    </div>
+
+                    {/* CARD 2: Personal Drive Size */}
+                    <div style={{
+                      background: "rgba(24, 24, 27, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.05)",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "130px",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)"
+                    }} className="immich-stat-card">
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ 
+                          width: "36px", 
+                          height: "36px", 
+                          borderRadius: "50%", 
+                          background: "rgba(99, 102, 241, 0.1)", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center" 
+                        }}>
+                          <HardDrive size={18} style={{ color: "#6366f1" }} />
+                        </div>
+                        <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#a1a1aa" }}>Personal Drive Space</span>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginTop: "16px" }}>
+                        {renderImmichStatNumber(
+                          Math.max(0, Math.round(usageStats.personal.totalSize / (1024 * 1024 * 1024))), 
+                          12, 
+                          "GiB"
+                        )}
+                      </div>
+                    </div>
+
+                    {/* CARD 3: Shared Drive Space */}
+                    <div style={{
+                      background: "rgba(24, 24, 27, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.05)",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "130px",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)"
+                    }} className="immich-stat-card">
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ 
+                          width: "36px", 
+                          height: "36px", 
+                          borderRadius: "50%", 
+                          background: "rgba(16, 185, 129, 0.1)", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center" 
+                        }}>
+                          <Share2 size={18} style={{ color: "#10b981" }} />
+                        </div>
+                        <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#a1a1aa" }}>Shared Drive Space</span>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginTop: "16px" }}>
+                        {renderImmichStatNumber(
+                          Math.max(0, Math.round(usageStats.shared.totalSize / (1024 * 1024 * 1024))), 
+                          12, 
+                          "GiB"
+                        )}
+                      </div>
+                    </div>
+
+                    {/* CARD 4: Archive Drive Space */}
+                    <div style={{
+                      background: "rgba(24, 24, 27, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.05)",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "130px",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)"
+                    }} className="immich-stat-card">
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ 
+                          width: "36px", 
+                          height: "36px", 
+                          borderRadius: "50%", 
+                          background: "rgba(245, 158, 11, 0.1)", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center" 
+                        }}>
+                          <Database size={18} style={{ color: "#f59e0b" }} />
+                        </div>
+                        <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#a1a1aa" }}>Archive Drive Space</span>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginTop: "16px" }}>
+                        {renderImmichStatNumber(
+                          Math.max(0, Math.round(usageStats.archive.totalSize / (1024 * 1024 * 1024))), 
+                          12, 
+                          "GiB"
+                        )}
+                      </div>
+                    </div>
+
+                    {/* CARD 5: Total Projects */}
+                    <div style={{
+                      background: "rgba(24, 24, 27, 0.7)",
+                      border: "1px solid rgba(255, 255, 255, 0.05)",
+                      borderRadius: "16px",
+                      padding: "24px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      minHeight: "130px",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.2)"
+                    }} className="immich-stat-card">
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                        <div style={{ 
+                          width: "36px", 
+                          height: "36px", 
+                          borderRadius: "50%", 
+                          background: "rgba(129, 140, 248, 0.1)", 
+                          display: "flex", 
+                          alignItems: "center", 
+                          justifyContent: "center" 
+                        }}>
+                          <Activity size={18} style={{ color: "#818cf8" }} />
+                        </div>
+                        <span style={{ fontSize: "0.95rem", fontWeight: 600, color: "#a1a1aa" }}>Active Projects</span>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginTop: "16px" }}>
+                        {renderImmichStatNumber(
+                          usageStats.projects?.totalCount || 0, 
+                          12, 
+                          "PROJECTS"
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PER USER STORAGE BREAKDOWN */}
+                <div className="panel-card" style={{ marginTop: "8px" }}>
+                  <h3 className="panel-card-title">
+                    <Users size={18} style={{ color: "#6366f1" }} />
+                    <span>Workspace Users Storage Breakdown</span>
+                  </h3>
+                  <p style={{ fontSize: "0.8rem", color: "#71717a", marginBottom: "20px" }}>
+                    Track actual disk storage consumed, files uploaded, and custom workspace quotas assigned to each user.
+                  </p>
+
+                  <div className="scrollable-table-container">
+                    <table className="modern-table">
+                      <thead>
+                        <tr>
+                          <th>User</th>
+                          <th>Role</th>
+                          <th>Files Uploaded</th>
+                          <th>Projects Created</th>
+                          <th>Storage Used</th>
+                          <th>Quota Limit</th>
+                          <th style={{ width: "220px" }}>Quota Percentage</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usageStats.personal.perUser.map((u: any) => {
+                          const sizeUsedReadable = u.sizeUsed > 0 
+                            ? (u.sizeUsed / (1024 * 1024 * 1024)).toFixed(2) + " GiB" 
+                            : "0.00 GiB";
+                          const limitReadable = (u.storageLimit / (1024 * 1024 * 1024)).toFixed(0) + " GB";
+                          const pct = Math.min(100, Math.max(0, (u.sizeUsed / u.storageLimit) * 100));
+
+                          return (
+                            <tr key={u.id}>
+                              <td>
+                                <div style={{ display: "flex", flexDirection: "column" }}>
+                                  <span style={{ fontWeight: 600, color: "#e4e4e7" }}>{u.name}</span>
+                                  <span style={{ fontSize: "0.75rem", color: "#71717a" }}>{u.email}</span>
+                                </div>
+                              </td>
+                              <td>
+                                <span className={`role-badge ${u.role}`}>
+                                  {u.role}
+                                </span>
+                              </td>
+                              <td style={{ color: "#e4e4e7", fontWeight: 500 }}>
+                                {u.itemsCount}
+                              </td>
+                              <td style={{ color: "#818cf8", fontWeight: 500 }}>
+                                {u.projectsCount || 0}
+                              </td>
+                              <td style={{ color: "#38bdf8", fontWeight: 500 }}>
+                                {sizeUsedReadable}
+                              </td>
+                              <td style={{ color: "#a1a1aa" }}>
+                                {limitReadable}
+                              </td>
+                              <td>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem" }}>
+                                    <span style={{ color: pct > 90 ? "#f87171" : pct > 75 ? "#fbbf24" : "#a1a1aa" }}>
+                                      {pct.toFixed(1)}%
+                                    </span>
+                                  </div>
+                                  <div style={{ 
+                                    width: "100%", 
+                                    height: "6px", 
+                                    background: "rgba(255, 255, 255, 0.05)", 
+                                    borderRadius: "3px",
+                                    overflow: "hidden" 
+                                  }}>
+                                    <div style={{ 
+                                      width: `${pct}%`, 
+                                      height: "100%", 
+                                      background: pct > 90 ? "linear-gradient(90deg, #ef4444, #f87171)" : pct > 75 ? "linear-gradient(90deg, #f59e0b, #fbbf24)" : "linear-gradient(90deg, #6366f1, #818cf8)",
+                                      borderRadius: "3px",
+                                      boxShadow: pct > 90 ? "0 0 8px rgba(239, 68, 68, 0.4)" : "0 0 8px rgba(99, 102, 241, 0.4)"
+                                    }} />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </main>

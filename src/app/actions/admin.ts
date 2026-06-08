@@ -1,10 +1,13 @@
 "use server";
 
 import { db } from "@/db";
-import { invitations, user, sharedLinks } from "@/db/schema";
+import { invitations, user, sharedLinks, assets, projects } from "@/db/schema";
 import { requireAdmin, getSession } from "@/lib/auth-server";
 import { eq, desc } from "drizzle-orm";
 import { resend } from "@/lib/resend";
+import { r2Client, R2_SHARED_BUCKET_NAME } from "@/lib/r2";
+import { b2Client, B2_BUCKET_NAME } from "@/lib/b2";
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import crypto from "crypto";
 
 /**
@@ -237,3 +240,155 @@ export async function adminExtendSharedLink(id: string, additionalHours: number)
 
   return { success: true, newExpiresAt: newExpiration };
 }
+
+/**
+ * Helper to fetch all items recursively in an S3/R2/B2 bucket and sum their size and count.
+ */
+async function getBucketUsage(client: any, bucketName: string) {
+  let totalSize = 0;
+  let totalItems = 0;
+  let continuationToken: string | undefined = undefined;
+
+  try {
+    do {
+      const command: ListObjectsV2Command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        ContinuationToken: continuationToken,
+      });
+      const response = await client.send(command);
+      const contents = response.Contents || [];
+      
+      for (const item of contents) {
+        // Skip directory placeholder files
+        if (item.Key && !item.Key.endsWith("/")) {
+          totalSize += item.Size || 0;
+          totalItems++;
+        }
+      }
+      
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+  } catch (error) {
+    console.error(`Failed to get usage for bucket ${bucketName}:`, error);
+  }
+
+  return { totalSize, totalItems };
+}
+
+export interface UserUsage {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: string;
+  storageLimit: number;
+  sizeUsed: number;
+  itemsCount: number;
+  projectsCount: number;
+}
+
+export interface PlatformUsageStats {
+  personal: {
+    totalSize: number;
+    totalItems: number;
+    perUser: UserUsage[];
+  };
+  shared: {
+    totalSize: number;
+    totalItems: number;
+  };
+  archive: {
+    totalSize: number;
+    totalItems: number;
+  };
+  projects: {
+    totalCount: number;
+  };
+}
+
+/**
+ * Fetches platform-wide storage usage stats across Personal, Shared, and Archive drives.
+ */
+export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
+  await requireAdmin();
+
+  // 1. Personal Drive (DB tracked assets in completed status)
+  const completedAssets = await db
+    .select({
+      id: assets.id,
+      size: assets.size,
+      uploadedBy: assets.uploadedBy,
+    })
+    .from(assets)
+    .where(eq(assets.status, "completed"));
+
+  let personalTotalSize = 0;
+  let personalTotalItems = 0;
+  const userUsageMap: Record<string, { size: number; items: number }> = {};
+
+  for (const asset of completedAssets) {
+    personalTotalSize += asset.size;
+    personalTotalItems++;
+
+    if (asset.uploadedBy) {
+      if (!userUsageMap[asset.uploadedBy]) {
+        userUsageMap[asset.uploadedBy] = { size: 0, items: 0 };
+      }
+      userUsageMap[asset.uploadedBy].size += asset.size;
+      userUsageMap[asset.uploadedBy].items += 1;
+    }
+  }
+
+  // Projects counting
+  const allProjects = await db.select().from(projects);
+  const totalProjects = allProjects.length;
+  const userProjectsMap: Record<string, number> = {};
+
+  for (const proj of allProjects) {
+    if (proj.userId) {
+      userProjectsMap[proj.userId] = (userProjectsMap[proj.userId] || 0) + 1;
+    }
+  }
+
+  const allUsers = await db.select().from(user);
+  const perUserUsage: UserUsage[] = allUsers.map((u) => {
+    const usage = userUsageMap[u.id] || { size: 0, items: 0 };
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      status: u.status,
+      storageLimit: u.storageLimit,
+      sizeUsed: usage.size,
+      itemsCount: usage.items,
+      projectsCount: userProjectsMap[u.id] || 0,
+    };
+  });
+
+  // 2. Shared Drive Usage (R2 Bucket direct)
+  const sharedUsage = await getBucketUsage(r2Client, R2_SHARED_BUCKET_NAME);
+
+  // 3. Archive Drive Usage (B2 Bucket direct)
+  const archiveUsage = await getBucketUsage(b2Client, B2_BUCKET_NAME);
+
+  return {
+    personal: {
+      totalSize: personalTotalSize,
+      totalItems: personalTotalItems,
+      perUser: perUserUsage,
+    },
+    shared: {
+      totalSize: sharedUsage.totalSize,
+      totalItems: sharedUsage.totalItems,
+    },
+    archive: {
+      totalSize: archiveUsage.totalSize,
+      totalItems: archiveUsage.totalItems,
+    },
+    projects: {
+      totalCount: totalProjects,
+    },
+  };
+}
+

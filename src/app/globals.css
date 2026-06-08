@@ -19,6 +19,9 @@
   --accent-success: #10b981;
   --accent-warning: #f59e0b;
   --accent-danger: #ef4444;
+  --accent-destructive: #ef4444;
+  --accent-destructive-hover: #dc2626;
+  --accent-destructive-glow: rgba(239, 68, 68, 0.15);
 
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
@@ -47,6 +50,8 @@
 
   --accent-blue-glow: rgba(59, 130, 246, 0.1);
   --accent-indigo-glow: rgba(99, 102, 241, 0.1);
+  --accent-destructive-hover: #b91c1c;
+  --accent-destructive-glow: rgba(220, 38, 38, 0.1);
   --shadow-glow: 0 0 20px 0 rgba(99, 102, 241, 0.05);
 }
 
