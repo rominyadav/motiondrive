@@ -25,7 +25,7 @@ import crypto from "crypto";
 // PROJECT MANAGEMENT ACTIONS
 // ==========================================
 
-export async function createProject(name: string, clientName?: string) {
+export async function createProject(name: string, clientName?: string, sharedWith?: string) {
   const session = await requireApprovedUser();
 
   const id = crypto.randomUUID();
@@ -34,6 +34,7 @@ export async function createProject(name: string, clientName?: string) {
     name,
     clientName,
     userId: session.user.id,
+    sharedWith: sharedWith || "all",
   });
 
   return { success: true, id };
@@ -41,25 +42,59 @@ export async function createProject(name: string, clientName?: string) {
 
 export async function listProjects() {
   const session = await requireApprovedUser();
-  return await db
-    .select()
-    .from(projects)
-    .where(
-      or(
-        eq(projects.userId, session.user.id),
-        isNull(projects.userId),
-        ilike(projects.name, "%shared%"),
-        ilike(projects.clientName, "%shared%")
-      )
-    )
-    .orderBy(desc(projects.createdAt));
+  const currentUser = session.user as any;
+  const currentUserId = currentUser.id;
+  const currentUserRole = currentUser.role;
+
+  // Retrieve all projects from the database
+  const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
+
+  // If the user is an admin, they can see ALL projects
+  if (currentUserRole === "admin") {
+    return allProjects;
+  }
+
+  // Otherwise, filter projects based on ownership and sharing permissions
+  return allProjects.filter((proj) => {
+    // 1. Owner can always see their own projects
+    if (proj.userId === currentUserId) return true;
+
+    // 2. Legacy projects without owner are visible to all
+    if (!proj.userId) return true;
+
+    // 3. Shared Drive projects (containing 'shared' keyword) are visible to all
+    const nameLower = (proj.name || "").toLowerCase();
+    const clientLower = (proj.clientName || "").toLowerCase();
+    if (nameLower.includes("shared") || clientLower.includes("shared")) return true;
+
+    // 4. Projects shared with "all" are visible to all
+    if (proj.sharedWith === "all" || !proj.sharedWith) return true;
+
+    // 5. Projects shared with specific users (comma-separated user IDs)
+    const shares = proj.sharedWith.split(",").map((s) => s.trim()).filter(Boolean);
+    if (shares.includes(currentUserId)) return true;
+
+    return false;
+  });
 }
 
-export async function renameProject(projectId: string, newName: string, newClientName?: string) {
+export async function listApprovedUsers() {
+  await requireApprovedUser();
+  return await db
+    .select({ id: user.id, name: user.name, email: user.email, role: user.role })
+    .from(user)
+    .where(eq(user.status, "approved"));
+}
+
+export async function renameProject(projectId: string, newName: string, newClientName?: string, sharedWith?: string) {
   await requireApprovedUser();
   await db
     .update(projects)
-    .set({ name: newName, clientName: newClientName || null })
+    .set({ 
+      name: newName, 
+      clientName: newClientName || null,
+      sharedWith: sharedWith || "all"
+    })
     .where(eq(projects.id, projectId));
   return { success: true };
 }

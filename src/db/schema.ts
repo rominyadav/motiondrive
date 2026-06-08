@@ -64,6 +64,7 @@ export const projects = pgTable("project", {
   name: text("name").notNull(),
   clientName: text("clientName"),
   userId: text("userId").references(() => user.id, { onDelete: "cascade" }),
+  sharedWith: text("sharedWith").default("all"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

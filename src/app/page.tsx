@@ -9,6 +9,7 @@ import {
   deleteFolder,
   createProject, 
   listProjects, 
+  listApprovedUsers,
   renameProject,
   deleteProject,
   listDriveContents, 
@@ -53,6 +54,7 @@ import {
   Archive,
   FolderOpen,
   Edit2,
+  MoreVertical,
   Info,
   AlertTriangle,
   CheckCircle,
@@ -134,6 +136,13 @@ function DrivePageContent() {
     enabled: !!session,
   });
 
+  // TanStack Query for Approved Users
+  const { data: approvedUsers = [] } = useQuery({
+    queryKey: ["approvedUsers"],
+    queryFn: listApprovedUsers,
+    enabled: !!session,
+  });
+
   // TanStack Query for Storage Stats
   const { data: storageStats = null, refetch: fetchStorageStats } = useQuery({
     queryKey: ["storageStats"],
@@ -181,6 +190,10 @@ function DrivePageContent() {
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
   const [newProjectClient, setNewProjectClient] = useState("");
+  const [shareWithAll, setShareWithAll] = useState(true);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [editShareWithAll, setEditShareWithAll] = useState(true);
+  const [editSelectedUserIds, setEditSelectedUserIds] = useState<string[]>([]);
 
   // Upload Drawer State
   const [uploadProgress, setUploadProgress] = useState<{ [filename: string]: number }>({});
@@ -276,6 +289,10 @@ function DrivePageContent() {
   const [newDropdownOpen, setNewDropdownOpen] = useState(false);
   const newDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Project Header Actions State
+  const [projectHeaderMenuOpen, setProjectHeaderMenuOpen] = useState(false);
+  const projectHeaderRef = useRef<HTMLDivElement>(null);
+
   // Text File Editor State
   const [textModalOpen, setTextModalOpen] = useState(false);
   const [textFileName, setTextFileName] = useState("");
@@ -333,6 +350,11 @@ function DrivePageContent() {
               setSelectedProjectToEdit(proj);
               setEditProjectName(proj.name);
               setEditProjectClient(proj.clientName || "");
+              
+              const shareAll = proj.sharedWith === "all" || !proj.sharedWith;
+              setEditShareWithAll(shareAll);
+              setEditSelectedUserIds(!shareAll && proj.sharedWith ? proj.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+              
               setRenameProjectModalOpen(true);
             }}
             className="btn-icon"
@@ -506,6 +528,17 @@ function DrivePageContent() {
     };
     window.addEventListener("mousedown", handleCloseNewDropdown);
     return () => window.removeEventListener("mousedown", handleCloseNewDropdown);
+  }, []);
+
+  // Click outside Project Header Actions dropdown to dismiss it
+  useEffect(() => {
+    const handleCloseProjectHeaderMenu = (e: MouseEvent) => {
+      if (projectHeaderRef.current && !projectHeaderRef.current.contains(e.target as Node)) {
+        setProjectHeaderMenuOpen(false);
+      }
+    };
+    window.addEventListener("mousedown", handleCloseProjectHeaderMenu);
+    return () => window.removeEventListener("mousedown", handleCloseProjectHeaderMenu);
   }, []);
 
   // Dynamically inject Quill 2.0 CDN script and stylesheet
@@ -756,9 +789,12 @@ function DrivePageContent() {
     if (!newProjectName.trim()) return;
 
     try {
-      await createProject(newProjectName.trim(), newProjectClient.trim() || undefined);
+      const sharedValue = shareWithAll ? "all" : selectedUserIds.join(",");
+      await createProject(newProjectName.trim(), newProjectClient.trim() || undefined, sharedValue);
       setNewProjectName("");
       setNewProjectClient("");
+      setShareWithAll(true);
+      setSelectedUserIds([]);
       setProjectModalOpen(false);
 
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -773,16 +809,19 @@ function DrivePageContent() {
     if (!selectedProjectToEdit || !editProjectName.trim()) return;
 
     try {
-      await renameProject(selectedProjectToEdit.id, editProjectName.trim(), editProjectClient.trim() || undefined);
+      const sharedValue = editShareWithAll ? "all" : editSelectedUserIds.join(",");
+      await renameProject(selectedProjectToEdit.id, editProjectName.trim(), editProjectClient.trim() || undefined, sharedValue);
       setRenameProjectModalOpen(false);
       setSelectedProjectToEdit(null);
       setEditProjectName("");
       setEditProjectClient("");
+      setEditShareWithAll(true);
+      setEditSelectedUserIds([]);
 
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      showToast("Project renamed successfully!", "success");
+      showToast("Project updated successfully!", "success");
     } catch (err) {
-      showToast("Failed to rename project", "error");
+      showToast("Failed to update project", "error");
     }
   };
 
@@ -2281,13 +2320,124 @@ function DrivePageContent() {
           </div>
 
           <div className="explorer-header">
-            <h2 className="explorer-title">
-              {explorerMode === "shared" 
-                ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
-                : explorerMode === "archive"
-                ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
-                : (folderPath[folderPath.length - 1]?.name || "My Drive")
-              }
+            <h2 className="explorer-title" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span>
+                {explorerMode === "shared" 
+                  ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
+                  : explorerMode === "archive"
+                  ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
+                  : (folderPath[folderPath.length - 1]?.name || "My Drive")
+                }
+              </span>
+
+              {(() => {
+                const currentOpenProject = explorerMode === "personal" && selectedProjectId 
+                  ? projects.find((p: any) => p.id === selectedProjectId)
+                  : null;
+                
+                if (!currentOpenProject) return null;
+
+                return (
+                  <div ref={projectHeaderRef} style={{ position: "relative", display: "inline-flex" }}>
+                    <button
+                      onClick={() => setProjectHeaderMenuOpen(!projectHeaderMenuOpen)}
+                      className="btn-icon"
+                      style={{
+                        padding: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: "8px",
+                        background: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        cursor: "pointer",
+                        color: "rgba(255, 255, 255, 0.8)",
+                        transition: "all 0.2s"
+                      }}
+                      title="Project Actions"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+
+                    {projectHeaderMenuOpen && (
+                      <div 
+                        className="new-dropdown-menu animate-scale-up" 
+                        style={{ 
+                          right: "auto", 
+                          left: 0, 
+                          top: "100%", 
+                          marginTop: "8px", 
+                          zIndex: 100,
+                          minWidth: "200px"
+                        }}
+                      >
+                        <button 
+                          onClick={() => {
+                            setSelectedProjectToEdit(currentOpenProject);
+                            setEditProjectName(currentOpenProject.name);
+                            setEditProjectClient(currentOpenProject.clientName || "");
+                            
+                            const shareAll = currentOpenProject.sharedWith === "all" || !currentOpenProject.sharedWith;
+                            setEditShareWithAll(shareAll);
+                            setEditSelectedUserIds(!shareAll && currentOpenProject.sharedWith ? currentOpenProject.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+                            
+                            setRenameProjectModalOpen(true);
+                            setProjectHeaderMenuOpen(false);
+                          }}
+                          className="dropdown-item"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            padding: "10px 14px",
+                            background: "none",
+                            border: "none",
+                            color: "var(--text-primary)",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            borderRadius: "4px",
+                            transition: "background 0.2s"
+                          }}
+                        >
+                          <Edit2 size={14} />
+                          <span>Rename / Edit Project</span>
+                        </button>
+                        
+                        {isAdmin && (
+                          <button 
+                            onClick={() => {
+                              setSelectedProjectToDelete(currentOpenProject);
+                              setDeleteProjectModalOpen(true);
+                              setProjectHeaderMenuOpen(false);
+                            }}
+                            className="dropdown-item"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              width: "100%",
+                              padding: "10px 14px",
+                              background: "none",
+                              border: "none",
+                              color: "#ff4d4d",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontSize: "13px",
+                              borderRadius: "4px",
+                              transition: "background 0.2s"
+                            }}
+                          >
+                            <Trash2 size={14} style={{ color: "#ff4d4d" }} />
+                            <span>Delete Project</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </h2>
             <div className="explorer-actions" ref={newDropdownRef}>
               <div className="view-mode-toggle">
@@ -2940,6 +3090,85 @@ function DrivePageContent() {
                 />
               </div>
 
+              <div className="form-group" style={{ margin: 0, marginTop: "4px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
+                  <input 
+                    type="checkbox" 
+                    checked={shareWithAll}
+                    onChange={(e) => setShareWithAll(e.target.checked)}
+                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                  />
+                  <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
+                </label>
+              </div>
+
+              {!shareWithAll && approvedUsers && approvedUsers.length > 0 && (
+                <div className="form-group" style={{ margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label className="form-label" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Select Specific Users to Share With</label>
+                  <div style={{
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px"
+                  }} className="custom-scrollbar">
+                    {approvedUsers.map((user: any) => {
+                      const isChecked = selectedUserIds.includes(user.id);
+                      return (
+                        <label 
+                          key={user.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "6px 8px",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            transition: "background-color 0.2s",
+                            backgroundColor: isChecked ? "rgba(99, 102, 241, 0.05)" : "transparent"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setSelectedUserIds(selectedUserIds.filter(id => id !== user.id));
+                                } else {
+                                  setSelectedUserIds([...selectedUserIds, user.id]);
+                                }
+                              }}
+                              style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                              <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
+                              <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: "10px",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            backgroundColor: user.role === "admin" ? "rgba(239, 68, 68, 0.1)" : user.role === "manager" ? "rgba(245, 158, 11, 0.1)" : "rgba(99, 102, 241, 0.1)",
+                            color: user.role === "admin" ? "#f87171" : user.role === "manager" ? "#fbbf24" : "#818cf8"
+                          }}>
+                            {user.role}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
                 <button type="button" onClick={() => setProjectModalOpen(false)} className="btn-secondary">
                   Cancel
@@ -2979,6 +3208,85 @@ function DrivePageContent() {
                   onChange={(e) => setEditProjectClient(e.target.value)}
                 />
               </div>
+
+              <div className="form-group" style={{ margin: 0, marginTop: "4px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
+                  <input 
+                    type="checkbox" 
+                    checked={editShareWithAll}
+                    onChange={(e) => setEditShareWithAll(e.target.checked)}
+                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                  />
+                  <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
+                </label>
+              </div>
+
+              {!editShareWithAll && approvedUsers && approvedUsers.length > 0 && (
+                <div className="form-group" style={{ margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label className="form-label" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Select Specific Users to Share With</label>
+                  <div style={{
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    backgroundColor: "rgba(255, 255, 255, 0.02)",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "8px",
+                    padding: "8px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px"
+                  }} className="custom-scrollbar">
+                    {approvedUsers.map((user: any) => {
+                      const isChecked = editSelectedUserIds.includes(user.id);
+                      return (
+                        <label 
+                          key={user.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "6px 8px",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            transition: "background-color 0.2s",
+                            backgroundColor: isChecked ? "rgba(99, 102, 241, 0.05)" : "transparent"
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
+                            <input 
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setEditSelectedUserIds(editSelectedUserIds.filter(id => id !== user.id));
+                                } else {
+                                  setEditSelectedUserIds([...editSelectedUserIds, user.id]);
+                                }
+                              }}
+                              style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                            />
+                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                              <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
+                              <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
+                            </div>
+                          </div>
+                          <span style={{
+                            fontSize: "10px",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            padding: "2px 6px",
+                            borderRadius: "4px",
+                            backgroundColor: user.role === "admin" ? "rgba(239, 68, 68, 0.1)" : user.role === "manager" ? "rgba(245, 158, 11, 0.1)" : "rgba(99, 102, 241, 0.1)",
+                            color: user.role === "admin" ? "#f87171" : user.role === "manager" ? "#fbbf24" : "#818cf8"
+                          }}>
+                            {user.role}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
                 <button type="button" onClick={() => {
