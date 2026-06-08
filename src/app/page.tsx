@@ -529,6 +529,47 @@ function DrivePageContent() {
     }
   }, []);
 
+  // Global accessibility keydown handlers (ESC to close, Enter to confirm)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ESCAPE key to dismiss any active modals/dialogs
+      if (e.key === "Escape") {
+        setFolderModalOpen(false);
+        setShowDetailedUsageModal(false);
+        setProjectModalOpen(false);
+        setRenameProjectModalOpen(false);
+        setDeleteProjectModalOpen(false);
+        setConfirmModal(null);
+      }
+
+      // ENTER key to confirm actions in delete/confirm modal prompts
+      if (e.key === "Enter") {
+        const activeEl = document.activeElement;
+        const isTyping = activeEl && (
+          activeEl.tagName === "INPUT" || 
+          activeEl.tagName === "TEXTAREA" || 
+          activeEl.getAttribute("contenteditable") === "true"
+        );
+
+        if (!isTyping) {
+          if (confirmModal && confirmModal.open) {
+            e.preventDefault();
+            confirmModal.onConfirm();
+            setConfirmModal(null);
+          } else if (deleteProjectModalOpen && selectedProjectToDelete) {
+            e.preventDefault();
+            handleDeleteProject();
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [confirmModal, deleteProjectModalOpen, selectedProjectToDelete]);
+
   const changeViewMode = (mode: "table" | "icons") => {
     setViewMode(mode);
     localStorage.setItem("motiondrive_view_mode", mode);
@@ -3282,6 +3323,7 @@ function DrivePageContent() {
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   required
+                  autoFocus
                 />
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
@@ -3501,6 +3543,7 @@ function DrivePageContent() {
                   value={newProjectName}
                   onChange={(e) => setNewProjectName(e.target.value)}
                   required
+                  autoFocus
                 />
               </div>
 
@@ -3621,6 +3664,7 @@ function DrivePageContent() {
                   value={editProjectName}
                   onChange={(e) => setEditProjectName(e.target.value)}
                   required
+                  autoFocus
                 />
               </div>
 
