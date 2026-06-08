@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { assets, folders, projects, user } from "@/db/schema";
+import { assets, folders, projects, user, sharedLinks } from "@/db/schema";
 import { requireApprovedUser, requireAdmin } from "@/lib/auth-server";
 import { r2Client, R2_BUCKET_NAME, R2_SHARED_BUCKET_NAME } from "@/lib/r2";
 import { b2Client, B2_BUCKET_NAME } from "@/lib/b2";
@@ -707,6 +707,15 @@ export async function deleteSharedAsset(key: string) {
   });
 
   await r2Client.send(command);
+
+  // Cascade delete any corresponding shared links in DB
+  await db.delete(sharedLinks).where(
+    and(
+      eq(sharedLinks.physicalKey, key),
+      eq(sharedLinks.physicalBucket, "shared")
+    )
+  );
+
   return { success: true };
 }
 
@@ -729,8 +738,28 @@ export async function deleteSharedFolder(prefix: string) {
         Key: obj.Key,
       });
       await r2Client.send(deleteCommand);
+
+      // Cascade delete shared links for nested files
+      await db.delete(sharedLinks).where(
+        and(
+          eq(sharedLinks.physicalKey, obj.Key),
+          eq(sharedLinks.physicalBucket, "shared")
+        )
+      );
     }
   }
+
+  // Cascade delete shared link for the folder itself or any subfolder under it
+  await db.delete(sharedLinks).where(
+    and(
+      or(
+        eq(sharedLinks.physicalPrefix, prefix),
+        ilike(sharedLinks.physicalPrefix, `${prefix}%`),
+        ilike(sharedLinks.physicalKey, `${prefix}%`)
+      ),
+      eq(sharedLinks.physicalBucket, "shared")
+    )
+  );
 
   return { success: true };
 }
@@ -917,6 +946,14 @@ export async function bulkDeleteItems(params: {
         Key: key,
       });
       await r2Client.send(command);
+
+      // Cascade delete shared links
+      await db.delete(sharedLinks).where(
+        and(
+          eq(sharedLinks.physicalKey, key),
+          eq(sharedLinks.physicalBucket, "shared")
+        )
+      );
     }
     // 2. Delete folders recursively (by prefix)
     for (const prefix of params.folderIds) {
@@ -933,8 +970,28 @@ export async function bulkDeleteItems(params: {
             Key: obj.Key,
           });
           await r2Client.send(deleteCommand);
+
+          // Cascade delete shared links for nested files
+          await db.delete(sharedLinks).where(
+            and(
+              eq(sharedLinks.physicalKey, obj.Key),
+              eq(sharedLinks.physicalBucket, "shared")
+            )
+          );
         }
       }
+
+      // Cascade delete shared link for the folder itself or any subfolder under it
+      await db.delete(sharedLinks).where(
+        and(
+          or(
+            eq(sharedLinks.physicalPrefix, prefix),
+            ilike(sharedLinks.physicalPrefix, `${prefix}%`),
+            ilike(sharedLinks.physicalKey, `${prefix}%`)
+          ),
+          eq(sharedLinks.physicalBucket, "shared")
+        )
+      );
     }
     return { success: true };
   }
