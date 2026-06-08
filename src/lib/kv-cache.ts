@@ -1,13 +1,30 @@
-import { kv } from "@vercel/kv";
+import Redis from "ioredis";
 
-const isKvConfigured = !!(
-  process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN
-);
+const redisUrl = process.env.KV_REDIS_URL || process.env.KV_URL;
 
-if (!isKvConfigured) {
+let redis: Redis | null = null;
+
+if (redisUrl) {
+  try {
+    // Prevent multiple connections during hot-reloads in development
+    if (process.env.NODE_ENV === "development") {
+      if (!(global as any)._redisClient) {
+        (global as any)._redisClient = new Redis(redisUrl, {
+          maxRetriesPerRequest: 1,
+        });
+      }
+      redis = (global as any)._redisClient;
+    } else {
+      redis = new Redis(redisUrl, {
+        maxRetriesPerRequest: 1,
+      });
+    }
+  } catch (err) {
+    console.error("[KVCache] Redis initialization failed:", err);
+  }
+} else {
   console.warn(
-    "Vercel KV environment variables (KV_REST_API_URL, KV_REST_API_TOKEN) are missing. " +
-    "Server-side caching is disabled, and requests will fall back directly to the database/API."
+    "[KVCache] KV_REDIS_URL or KV_URL environment variable is missing. Caching is disabled."
   );
 }
 
@@ -16,13 +33,13 @@ export const kvCache = {
    * Set value in cache with optional TTL in seconds
    */
   async set(key: string, value: any, ttlSeconds?: number): Promise<void> {
-    if (!isKvConfigured) return;
+    if (!redis) return;
     try {
       const stringValue = typeof value === "string" ? value : JSON.stringify(value);
       if (ttlSeconds) {
-        await kv.set(key, stringValue, { ex: ttlSeconds });
+        await redis.set(key, stringValue, "EX", ttlSeconds);
       } else {
-        await kv.set(key, stringValue);
+        await redis.set(key, stringValue);
       }
     } catch (error) {
       console.error(`[KVCache] Error setting key "${key}":`, error);
@@ -33,20 +50,16 @@ export const kvCache = {
    * Get value from cache with auto-JSON parsing
    */
   async get<T>(key: string): Promise<T | null> {
-    if (!isKvConfigured) return null;
+    if (!redis) return null;
     try {
-      const data = await kv.get<string>(key);
+      const data = await redis.get(key);
       if (data === null || data === undefined) return null;
-      
-      // If it looks like a JSON string/object, parse it
-      if (typeof data === "string") {
-        try {
-          return JSON.parse(data) as T;
-        } catch {
-          return data as unknown as T;
-        }
+
+      try {
+        return JSON.parse(data) as T;
+      } catch {
+        return data as unknown as T;
       }
-      return data as T;
     } catch (error) {
       console.error(`[KVCache] Error getting key "${key}":`, error);
       return null;
@@ -57,9 +70,9 @@ export const kvCache = {
    * Delete value from cache
    */
   async delete(key: string): Promise<void> {
-    if (!isKvConfigured) return;
+    if (!redis) return;
     try {
-      await kv.del(key);
+      await redis.del(key);
     } catch (error) {
       console.error(`[KVCache] Error deleting key "${key}":`, error);
     }
@@ -73,7 +86,7 @@ export const kvCache = {
     fetchFn: () => Promise<T>,
     ttlSeconds?: number
   ): Promise<T> {
-    if (!isKvConfigured) {
+    if (!redis) {
       return fetchFn();
     }
 
@@ -87,3 +100,4 @@ export const kvCache = {
     return freshData;
   }
 };
+export { redis };
