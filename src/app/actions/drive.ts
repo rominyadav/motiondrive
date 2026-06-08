@@ -22,6 +22,62 @@ import { eq, and, or, isNull, desc, inArray, sql, ilike } from "drizzle-orm";
 import crypto from "crypto";
 
 // ==========================================
+// REDIS CACHE VERSIONING HELPERS
+// ==========================================
+
+async function getCacheVersion(userId: string): Promise<string> {
+  try {
+    const { redis } = await import("@/lib/kv-cache");
+    if (redis) {
+      const version = await redis.get(`user:${userId}:drive_version`);
+      if (version) return version;
+      await redis.set(`user:${userId}:drive_version`, "1");
+      return "1";
+    }
+  } catch (err) {
+    console.error("[Cache] Failed to get cache version:", err);
+  }
+  return "1";
+}
+
+async function incrementCacheVersion(userId: string) {
+  try {
+    const { redis } = await import("@/lib/kv-cache");
+    if (redis) {
+      await redis.incr(`user:${userId}:drive_version`);
+    }
+  } catch (err) {
+    console.error("[Cache] Failed to increment cache version:", err);
+  }
+}
+
+async function getGlobalProjectsVersion(): Promise<string> {
+  try {
+    const { redis } = await import("@/lib/kv-cache");
+    if (redis) {
+      const version = await redis.get("global:projects_version");
+      if (version) return version;
+      await redis.set("global:projects_version", "1");
+      return "1";
+    }
+  } catch (err) {
+    console.error("[Cache] Failed to get global projects version:", err);
+  }
+  return "1";
+}
+
+async function incrementGlobalProjectsVersion() {
+  try {
+    const { redis } = await import("@/lib/kv-cache");
+    if (redis) {
+      await redis.incr("global:projects_version");
+    }
+  } catch (err) {
+    console.error("[Cache] Failed to increment global projects version:", err);
+  }
+}
+
+// ==========================================
 // PROJECT MANAGEMENT ACTIONS
 // ==========================================
 
@@ -37,6 +93,9 @@ export async function createProject(name: string, clientName?: string, sharedWit
     sharedWith: sharedWith || "all",
   });
 
+  await incrementGlobalProjectsVersion();
+  await incrementCacheVersion(session.user.id);
+
   return { success: true, id };
 }
 
@@ -46,36 +105,43 @@ export async function listProjects() {
   const currentUserId = currentUser.id;
   const currentUserRole = currentUser.role;
 
-  // Retrieve all projects from the database
-  const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
+  const projVersion = await getGlobalProjectsVersion();
+  const cacheKey = `user:${currentUserId}:role:${currentUserRole}:projects:v:${projVersion}`;
 
-  // If the user is an admin, they can see ALL projects
-  if (currentUserRole === "admin") {
-    return allProjects;
-  }
+  const { kvCache } = await import("@/lib/kv-cache");
 
-  // Otherwise, filter projects based on ownership and sharing permissions
-  return allProjects.filter((proj) => {
-    // 1. Owner can always see their own projects
-    if (proj.userId === currentUserId) return true;
+  return kvCache.getOrSet(cacheKey, async () => {
+    // Retrieve all projects from the database
+    const allProjects = await db.select().from(projects).orderBy(desc(projects.createdAt));
 
-    // 2. Legacy projects without owner are visible to all
-    if (!proj.userId) return true;
+    // If the user is an admin, they can see ALL projects
+    if (currentUserRole === "admin") {
+      return allProjects;
+    }
 
-    // 3. Shared Drive projects (containing 'shared' keyword) are visible to all
-    const nameLower = (proj.name || "").toLowerCase();
-    const clientLower = (proj.clientName || "").toLowerCase();
-    if (nameLower.includes("shared") || clientLower.includes("shared")) return true;
+    // Otherwise, filter projects based on ownership and sharing permissions
+    return allProjects.filter((proj) => {
+      // 1. Owner can always see their own projects
+      if (proj.userId === currentUserId) return true;
 
-    // 4. Projects shared with "all" are visible to all
-    if (proj.sharedWith === "all" || !proj.sharedWith) return true;
+      // 2. Legacy projects without owner are visible to all
+      if (!proj.userId) return true;
 
-    // 5. Projects shared with specific users (comma-separated user IDs)
-    const shares = proj.sharedWith.split(",").map((s) => s.trim()).filter(Boolean);
-    if (shares.includes(currentUserId)) return true;
+      // 3. Shared Drive projects (containing 'shared' keyword) are visible to all
+      const nameLower = (proj.name || "").toLowerCase();
+      const clientLower = (proj.clientName || "").toLowerCase();
+      if (nameLower.includes("shared") || clientLower.includes("shared")) return true;
 
-    return false;
-  });
+      // 4. Projects shared with "all" are visible to all
+      if (proj.sharedWith === "all" || !proj.sharedWith) return true;
+
+      // 5. Projects shared with specific users (comma-separated user IDs)
+      const shares = proj.sharedWith.split(",").map((s) => s.trim()).filter(Boolean);
+      if (shares.includes(currentUserId)) return true;
+
+      return false;
+    });
+  }, 3600);
 }
 
 export async function listApprovedUsers() {
@@ -87,7 +153,7 @@ export async function listApprovedUsers() {
 }
 
 export async function renameProject(projectId: string, newName: string, newClientName?: string, sharedWith?: string) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
   await db
     .update(projects)
     .set({ 
@@ -96,11 +162,15 @@ export async function renameProject(projectId: string, newName: string, newClien
       sharedWith: sharedWith || "all"
     })
     .where(eq(projects.id, projectId));
+
+  await incrementGlobalProjectsVersion();
+  await incrementCacheVersion(session.user.id);
+
   return { success: true };
 }
 
 export async function deleteProject(projectId: string) {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   // Retrieve all files (assets) mapped to this project
   const allAssets = await db
@@ -125,6 +195,9 @@ export async function deleteProject(projectId: string) {
   // folders and assets tables use foreign keys with `onDelete: "cascade"`, so they are cleaned up automatically in DB
   await db.delete(projects).where(eq(projects.id, projectId));
 
+  await incrementGlobalProjectsVersion();
+  await incrementCacheVersion(session.user.id);
+
   return { success: true };
 }
 
@@ -145,11 +218,13 @@ export async function createFolder(name: string, projectId?: string, parentId?: 
     name,
   });
 
+  await incrementCacheVersion(userId);
+
   return { success: true, id };
 }
 
 export async function deleteFolder(folderId: string) {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   // Recursive helper function to find all subfolder IDs
   async function getAllSubfolderIds(fId: string): Promise<string[]> {
@@ -191,6 +266,8 @@ export async function deleteFolder(folderId: string) {
   // Delete folders from DB
   // assets table uses foreign key with `onDelete: "cascade"`, so its DB records are cleaned up automatically
   await db.delete(folders).where(inArray(folders.id, allFolderIds));
+
+  await incrementCacheVersion(session.user.id);
 
   return { success: true };
 }
@@ -339,7 +416,7 @@ export async function completeMultipartUpload(params: {
   assetId: string;
   isSharedDrive?: boolean;
 }) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
 
   const bucketName = params.isSharedDrive ? R2_SHARED_BUCKET_NAME : R2_BUCKET_NAME;
 
@@ -360,6 +437,7 @@ export async function completeMultipartUpload(params: {
       .update(assets)
       .set({ status: "completed" })
       .where(eq(assets.id, params.assetId));
+    await incrementCacheVersion(session.user.id);
   }
 
   return { success: true };
@@ -374,7 +452,7 @@ export async function abortMultipartUpload(params: {
   assetId: string;
   isSharedDrive?: boolean;
 }) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
 
   const bucketName = params.isSharedDrive ? R2_SHARED_BUCKET_NAME : R2_BUCKET_NAME;
 
@@ -400,6 +478,7 @@ export async function abortMultipartUpload(params: {
             eq(assets.status, "pending")
           )
         );
+      await incrementCacheVersion(session.user.id);
     } catch (err) {
       console.error("Failed to delete pending asset from DB:", err);
     }
@@ -449,56 +528,63 @@ export async function listDriveContents(params: {
   const session = await requireApprovedUser();
   const currentUserId = session.user.id;
 
-  // Retrieve folders in this current view
-  const folderConditions = [
-    params.projectId ? eq(folders.projectId, params.projectId) : isNull(folders.projectId),
-    params.folderId ? eq(folders.parentId, params.folderId) : isNull(folders.parentId),
-  ];
-  if (!params.projectId) {
-    const folderOr = or(eq(folders.userId, currentUserId), isNull(folders.userId));
-    if (folderOr) {
-      folderConditions.push(folderOr);
+  const version = await getCacheVersion(currentUserId);
+  const cacheKey = `user:${currentUserId}:drive:v:${version}:proj:${params.projectId || "root"}:fold:${params.folderId || "root"}`;
+
+  const { kvCache } = await import("@/lib/kv-cache");
+
+  return kvCache.getOrSet(cacheKey, async () => {
+    // Retrieve folders in this current view
+    const folderConditions = [
+      params.projectId ? eq(folders.projectId, params.projectId) : isNull(folders.projectId),
+      params.folderId ? eq(folders.parentId, params.folderId) : isNull(folders.parentId),
+    ];
+    if (!params.projectId) {
+      const folderOr = or(eq(folders.userId, currentUserId), isNull(folders.userId));
+      if (folderOr) {
+        folderConditions.push(folderOr);
+      }
     }
-  }
 
-  const currentFolders = await db
-    .select()
-    .from(folders)
-    .where(and(...folderConditions));
+    const currentFolders = await db
+      .select()
+      .from(folders)
+      .where(and(...folderConditions));
 
-  // Retrieve completed files in this current view
-  const assetConditions = [
-    params.projectId ? eq(assets.projectId, params.projectId) : isNull(assets.projectId),
-    params.folderId ? eq(assets.folderId, params.folderId) : isNull(assets.folderId),
-    eq(assets.status, "completed"),
-  ];
-  if (!params.projectId) {
-    const assetOr = or(eq(assets.uploadedBy, currentUserId), isNull(assets.uploadedBy));
-    if (assetOr) {
-      assetConditions.push(assetOr);
+    // Retrieve completed files in this current view
+    const assetConditions = [
+      params.projectId ? eq(assets.projectId, params.projectId) : isNull(assets.projectId),
+      params.folderId ? eq(assets.folderId, params.folderId) : isNull(assets.folderId),
+      eq(assets.status, "completed"),
+    ];
+    if (!params.projectId) {
+      const assetOr = or(eq(assets.uploadedBy, currentUserId), isNull(assets.uploadedBy));
+      if (assetOr) {
+        assetConditions.push(assetOr);
+      }
     }
-  }
 
-  const currentAssets = await db
-    .select({
-      id: assets.id,
-      filename: assets.filename,
-      size: assets.size,
-      mimeType: assets.mimeType,
-      uploadedAt: assets.uploadedAt,
-      uploadedBy: user.name,
-      status: assets.status,
-    })
-    .from(assets)
-    .leftJoin(user, eq(assets.uploadedBy, user.id))
-    .where(and(...assetConditions))
-    .orderBy(desc(assets.uploadedAt));
+    const currentAssets = await db
+      .select({
+        id: assets.id,
+        filename: assets.filename,
+        size: assets.size,
+        mimeType: assets.mimeType,
+        uploadedAt: assets.uploadedAt,
+        uploadedBy: user.name,
+        status: assets.status,
+      })
+      .from(assets)
+      .leftJoin(user, eq(assets.uploadedBy, user.id))
+      .where(and(...assetConditions))
+      .orderBy(desc(assets.uploadedAt));
 
-  return { folders: currentFolders, assets: currentAssets };
+    return { folders: currentFolders, assets: currentAssets };
+  }, 3600);
 }
 
 export async function deleteAsset(assetId: string) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
 
   // Find asset key
   const [asset] = await db
@@ -523,6 +609,8 @@ export async function deleteAsset(assetId: string) {
 
   // Delete from DB index
   await db.delete(assets).where(eq(assets.id, assetId));
+
+  await incrementCacheVersion(session.user.id);
 
   return { success: true };
 }
@@ -730,20 +818,26 @@ export async function getArchiveDownloadUrl(key: string) {
 // ==========================================
 
 export async function renameAsset(assetId: string, newFilename: string) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
   await db
     .update(assets)
     .set({ filename: newFilename })
     .where(eq(assets.id, assetId));
+
+  await incrementCacheVersion(session.user.id);
+
   return { success: true };
 }
 
 export async function renameFolder(folderId: string, newName: string) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
   await db
     .update(folders)
     .set({ name: newName })
     .where(eq(folders.id, folderId));
+
+  await incrementCacheVersion(session.user.id);
+
   return { success: true };
 }
 
@@ -812,7 +906,7 @@ export async function bulkDeleteItems(params: {
   folderIds: string[];
   isSharedDrive?: boolean;
 }) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
 
   if (params.isSharedDrive) {
     // Shared Drive deletion (direct S3 physical paths)
@@ -919,6 +1013,8 @@ export async function bulkDeleteItems(params: {
     await db.delete(folders).where(inArray(folders.id, uniqueFolderIds));
   }
 
+  await incrementCacheVersion(session.user.id);
+
   return { success: true };
 }
 
@@ -931,7 +1027,7 @@ export async function bulkMoveItems(params: {
   sourceIsSharedDrive?: boolean;
   targetIsSharedDrive?: boolean;
 }) {
-  await requireApprovedUser();
+  const session = await requireApprovedUser();
 
   const sourceIsShared = params.sourceIsSharedDrive !== undefined ? params.sourceIsSharedDrive : !!params.isSharedDrive;
   const targetIsShared = params.targetIsSharedDrive !== undefined ? params.targetIsSharedDrive : !!params.isSharedDrive;
@@ -1066,6 +1162,8 @@ export async function bulkMoveItems(params: {
       await updateNestedFoldersProjectId(fId, targetProjId);
     }
   }
+
+  await incrementCacheVersion(session.user.id);
 
   return { success: true };
 }
@@ -1436,6 +1534,8 @@ export async function bulkCopyItems(params: {
     await copyFolderRecursive(folderId, targetParentId);
   }
 
+  await incrementCacheVersion(session.user.id);
+
   return { success: true };
 }
 
@@ -1446,30 +1546,37 @@ export async function getUserStorageStats() {
   const session = await requireApprovedUser();
   const userId = session.user.id;
 
-  const [userRecord] = await db
-    .select({ storageLimit: user.storageLimit })
-    .from(user)
-    .where(eq(user.id, userId));
+  const version = await getCacheVersion(userId);
+  const cacheKey = `user:${userId}:storage_stats:v:${version}`;
 
-  const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
+  const { kvCache } = await import("@/lib/kv-cache");
 
-  const [sizeQuery] = await db
-    .select({ totalSize: sql<number>`COALESCE(SUM(${assets.size}), 0)` })
-    .from(assets)
-    .where(
-      and(
-        eq(assets.uploadedBy, userId),
-        eq(assets.status, "completed")
-      )
-    );
+  return kvCache.getOrSet(cacheKey, async () => {
+    const [userRecord] = await db
+      .select({ storageLimit: user.storageLimit })
+      .from(user)
+      .where(eq(user.id, userId));
 
-  const used = sizeQuery?.totalSize ?? 0;
+    const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
 
-  return {
-    used,
-    limit,
-    available: Math.max(0, limit - used),
-  };
+    const [sizeQuery] = await db
+      .select({ totalSize: sql<number>`COALESCE(SUM(${assets.size}), 0)` })
+      .from(assets)
+      .where(
+        and(
+          eq(assets.uploadedBy, userId),
+          eq(assets.status, "completed")
+        )
+      );
+
+    const used = sizeQuery?.totalSize ?? 0;
+
+    return {
+      used,
+      limit,
+      available: Math.max(0, limit - used),
+    };
+  }, 3600);
 }
 
 /**
@@ -1479,76 +1586,83 @@ export async function getUserDetailedUsageStats() {
   const session = await requireApprovedUser();
   const userId = session.user.id;
 
-  const [userRecord] = await db
-    .select({ storageLimit: user.storageLimit })
-    .from(user)
-    .where(eq(user.id, userId));
+  const version = await getCacheVersion(userId);
+  const cacheKey = `user:${userId}:detailed_usage_stats:v:${version}`;
 
-  const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
+  const { kvCache } = await import("@/lib/kv-cache");
 
-  // Fetch all user's completed assets
-  const userAssets = await db
-    .select({
-      id: assets.id,
-      size: assets.size,
-      projectId: assets.projectId,
-      folderId: assets.folderId,
-    })
-    .from(assets)
-    .where(
-      and(
-        eq(assets.uploadedBy, userId),
-        eq(assets.status, "completed")
-      )
-    );
+  return kvCache.getOrSet(cacheKey, async () => {
+    const [userRecord] = await db
+      .select({ storageLimit: user.storageLimit })
+      .from(user)
+      .where(eq(user.id, userId));
 
-  const used = userAssets.reduce((sum, asset) => sum + asset.size, 0);
-  const totalFiles = userAssets.length;
+    const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
 
-  // Count user-owned folders
-  const userFolders = await db
-    .select()
-    .from(folders)
-    .where(eq(folders.userId, userId));
-  const totalFolders = userFolders.length;
+    // Fetch all user's completed assets
+    const userAssets = await db
+      .select({
+        id: assets.id,
+        size: assets.size,
+        projectId: assets.projectId,
+        folderId: assets.folderId,
+      })
+      .from(assets)
+      .where(
+        and(
+          eq(assets.uploadedBy, userId),
+          eq(assets.status, "completed")
+        )
+      );
 
-  // Count user-created projects
-  const userProjects = await db
-    .select()
-    .from(projects)
-    .where(eq(projects.userId, userId));
-  const totalProjects = userProjects.length;
+    const used = userAssets.reduce((sum, asset) => sum + asset.size, 0);
+    const totalFiles = userAssets.length;
 
-  // Aggregate assets size and counts by projectId
-  const projectStatsMap: Record<string, { size: number; count: number }> = {};
-  for (const asset of userAssets) {
-    if (asset.projectId) {
-      if (!projectStatsMap[asset.projectId]) {
-        projectStatsMap[asset.projectId] = { size: 0, count: 0 };
+    // Count user-owned folders
+    const userFolders = await db
+      .select()
+      .from(folders)
+      .where(eq(folders.userId, userId));
+    const totalFolders = userFolders.length;
+
+    // Count user-created projects
+    const userProjects = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.userId, userId));
+    const totalProjects = userProjects.length;
+
+    // Aggregate assets size and counts by projectId
+    const projectStatsMap: Record<string, { size: number; count: number }> = {};
+    for (const asset of userAssets) {
+      if (asset.projectId) {
+        if (!projectStatsMap[asset.projectId]) {
+          projectStatsMap[asset.projectId] = { size: 0, count: 0 };
+        }
+        projectStatsMap[asset.projectId].size += asset.size;
+        projectStatsMap[asset.projectId].count += 1;
       }
-      projectStatsMap[asset.projectId].size += asset.size;
-      projectStatsMap[asset.projectId].count += 1;
     }
-  }
 
-  const projectBreakdown = userProjects.map((proj) => {
-    const stats = projectStatsMap[proj.id] || { size: 0, count: 0 };
+    const projectBreakdown = userProjects.map((proj) => {
+      const stats = projectStatsMap[proj.id] || { size: 0, count: 0 };
+      return {
+        id: proj.id,
+        name: proj.name,
+        clientName: proj.clientName,
+        sizeUsed: stats.size,
+        filesCount: stats.count,
+      };
+    });
+
     return {
-      id: proj.id,
-      name: proj.name,
-      clientName: proj.clientName,
-      sizeUsed: stats.size,
-      filesCount: stats.count,
+      used,
+      limit,
+      available: Math.max(0, limit - used),
+      totalFiles,
+      totalFolders,
+      totalProjects,
+      projectBreakdown,
     };
-  });
-
-  return {
-    used,
-    limit,
-    available: Math.max(0, limit - used),
-    totalFiles,
-    totalFolders,
-    totalProjects,
-    projectBreakdown,
-  };
+  }, 3600);
 }
