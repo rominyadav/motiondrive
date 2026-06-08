@@ -1,7 +1,7 @@
 "use server";
 
 import { db } from "@/db";
-import { invitations, user } from "@/db/schema";
+import { invitations, user, sharedLinks } from "@/db/schema";
 import { requireAdmin, getSession } from "@/lib/auth-server";
 import { eq, desc } from "drizzle-orm";
 import { resend } from "@/lib/resend";
@@ -171,4 +171,69 @@ export async function updateUserRole(userId: string, role: "admin" | "manager" |
     .where(eq(user.id, userId));
 
   return { success: true };
+}
+
+/**
+ * Lists all shared links on the platform (Admin-only).
+ */
+export async function listAllSharedLinks() {
+  const session = await getSession();
+  if (!session || !session.user || (session.user as any).role !== "admin") {
+    throw new Error("Forbidden");
+  }
+
+  return await db
+    .select()
+    .from(sharedLinks)
+    .orderBy(desc(sharedLinks.createdAt));
+}
+
+/**
+ * Revokes a shared link (Admin-only).
+ */
+export async function adminRevokeSharedLink(id: string) {
+  const session = await getSession();
+  if (!session || !session.user || (session.user as any).role !== "admin") {
+    throw new Error("Forbidden");
+  }
+
+  await db
+    .update(sharedLinks)
+    .set({ isRevoked: true })
+    .where(eq(sharedLinks.id, id));
+
+  return { success: true };
+}
+
+/**
+ * Extends a shared link by additional hours (Admin-only).
+ */
+export async function adminExtendSharedLink(id: string, additionalHours: number) {
+  const session = await getSession();
+  if (!session || !session.user || (session.user as any).role !== "admin") {
+    throw new Error("Forbidden");
+  }
+
+  const [link] = await db
+    .select()
+    .from(sharedLinks)
+    .where(eq(sharedLinks.id, id));
+
+  if (!link) {
+    throw new Error("Shared link not found");
+  }
+
+  const currentExpiration = link.expiresAt.getTime();
+  const baseTime = currentExpiration > Date.now() ? currentExpiration : Date.now();
+  const newExpiration = new Date(baseTime + additionalHours * 60 * 60 * 1000);
+
+  await db
+    .update(sharedLinks)
+    .set({ 
+      expiresAt: newExpiration,
+      isRevoked: false 
+    })
+    .where(eq(sharedLinks.id, id));
+
+  return { success: true, newExpiresAt: newExpiration };
 }
