@@ -18,7 +18,7 @@ import {
   HeadObjectCommand
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { eq, and, or, isNull, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, or, isNull, desc, inArray, sql, ilike } from "drizzle-orm";
 import crypto from "crypto";
 
 // ==========================================
@@ -33,14 +33,26 @@ export async function createProject(name: string, clientName?: string) {
     id,
     name,
     clientName,
+    userId: session.user.id,
   });
 
   return { success: true, id };
 }
 
 export async function listProjects() {
-  await requireApprovedUser();
-  return await db.select().from(projects).orderBy(desc(projects.createdAt));
+  const session = await requireApprovedUser();
+  return await db
+    .select()
+    .from(projects)
+    .where(
+      or(
+        eq(projects.userId, session.user.id),
+        isNull(projects.userId),
+        ilike(projects.name, "%shared%"),
+        ilike(projects.clientName, "%shared%")
+      )
+    )
+    .orderBy(desc(projects.createdAt));
 }
 
 export async function renameProject(projectId: string, newName: string, newClientName?: string) {

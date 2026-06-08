@@ -239,6 +239,15 @@ function DrivePageContent() {
   const [deleteProjectModalOpen, setDeleteProjectModalOpen] = useState(false);
   const [selectedProjectToDelete, setSelectedProjectToDelete] = useState<any | null>(null);
 
+  // Project Section Collapsible & Show More States
+  const [yourProjsExpanded, setYourProjsExpanded] = useState(true);
+  const [sharedProjsExpanded, setSharedProjsExpanded] = useState(false);
+  const [archiveProjsExpanded, setArchiveProjsExpanded] = useState(false);
+
+  const [yourProjsLimit, setYourProjsLimit] = useState(5);
+  const [sharedProjsLimit, setSharedProjsLimit] = useState(5);
+  const [archiveProjsLimit, setArchiveProjsLimit] = useState(5);
+
   // Unified Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
@@ -289,6 +298,172 @@ function DrivePageContent() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to render individual project item in sidebar
+  const renderProjectItem = (proj: any) => {
+    const isActive = explorerMode === "personal" && selectedProjectId === proj.id;
+    return (
+      <div 
+        key={proj.id}
+        className={`project-sidebar-item ${isActive ? "active" : ""}`}
+        onClick={() => {
+          selectProject(proj.id, proj.name);
+          setSidebarOpen(false);
+        }}
+        style={{
+          paddingLeft: "24px",
+          height: "36px",
+          fontSize: "13px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          borderRadius: "8px",
+          cursor: "pointer",
+          transition: "all 0.2s ease"
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
+          <Folder size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
+        </div>
+        <div className="project-sidebar-item-actions">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedProjectToEdit(proj);
+              setEditProjectName(proj.name);
+              setEditProjectClient(proj.clientName || "");
+              setRenameProjectModalOpen(true);
+            }}
+            className="btn-icon"
+            style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+            title="Rename Project"
+          >
+            <Edit2 size={12} />
+          </button>
+          {isAdmin && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedProjectToDelete(proj);
+                setDeleteProjectModalOpen(true);
+              }}
+              className="btn-icon delete"
+              style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+              title="Delete Project"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Helper to render project section collapsible list
+  const renderProjectSection = (
+    title: string,
+    items: any[],
+    isExpanded: boolean,
+    toggleExpanded: () => void,
+    limit: number,
+    setLimit: (l: number) => void
+  ) => {
+    const visibleItems = isExpanded ? items.slice(0, limit) : [];
+    const hasMore = items.length > 5;
+    const isShowingAll = limit >= items.length;
+
+    return (
+      <div style={{ marginBottom: "12px" }}>
+        <div 
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleExpanded();
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "6px 12px",
+            cursor: "pointer",
+            borderRadius: "6px",
+            userSelect: "none",
+            transition: "background-color 0.2s ease",
+          }}
+          className="sidebar-section-header"
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+            {isExpanded ? (
+              <ChevronDown size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+            ) : (
+              <ChevronRight size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+            )}
+            <span style={{ 
+              fontSize: "12px", 
+              fontWeight: 600, 
+              color: "var(--text-secondary)",
+              overflow: "hidden", 
+              textOverflow: "ellipsis", 
+              whiteSpace: "nowrap" 
+            }}>
+              {title} <span style={{ opacity: 0.5, fontWeight: 400, marginLeft: "4px" }}>({items.length})</span>
+            </span>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px", marginTop: "4px" }}>
+            {items.length === 0 ? (
+              <div style={{ 
+                padding: "8px 12px 8px 24px", 
+                fontSize: "12px", 
+                color: "var(--text-muted)", 
+                fontStyle: "italic" 
+              }}>
+                No projects
+              </div>
+            ) : (
+              <>
+                {visibleItems.map(renderProjectItem)}
+                
+                {hasMore && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isShowingAll) {
+                        setLimit(5);
+                      } else {
+                        setLimit(items.length);
+                      }
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--accent-indigo)",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      textAlign: "left",
+                      padding: "6px 12px 6px 24px",
+                      cursor: "pointer",
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      opacity: 0.8,
+                      transition: "opacity 0.2s ease"
+                    }}
+                    className="show-more-btn"
+                  >
+                    {isShowingAll ? "Show Less" : `Show More (${items.length - 5} more)`}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Auto-close context menu on window clicks
   useEffect(() => {
@@ -1876,8 +2051,8 @@ function DrivePageContent() {
           </button>
 
           <div style={{ marginTop: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "8px" }}>
-              <span className="section-title" style={{ margin: 0, fontSize: "11px" }}>Projects</span>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "12px" }}>
+              <span className="section-title" style={{ margin: 0, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", opacity: 0.8 }}>Projects</span>
               <button 
                 onClick={() => {
                   setProjectModalOpen(true);
@@ -1890,54 +2065,59 @@ function DrivePageContent() {
               </button>
             </div>
 
-            {projects.map((proj) => {
-              const isActive = explorerMode === "personal" && selectedProjectId === proj.id;
+            {(() => {
+              const yourProjects = (projects || []).filter(proj => {
+                const nameLower = (proj.name || "").toLowerCase();
+                const clientLower = (proj.clientName || "").toLowerCase();
+                const isShared = nameLower.includes("shared") || clientLower.includes("shared");
+                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
+                return !isShared && !isArchive;
+              });
+
+              const sharedProjects = (projects || []).filter(proj => {
+                const nameLower = (proj.name || "").toLowerCase();
+                const clientLower = (proj.clientName || "").toLowerCase();
+                const isShared = nameLower.includes("shared") || clientLower.includes("shared");
+                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
+                return isShared && !isArchive;
+              });
+
+              const archiveProjects = (projects || []).filter(proj => {
+                const nameLower = (proj.name || "").toLowerCase();
+                const clientLower = (proj.clientName || "").toLowerCase();
+                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
+                return isArchive;
+              });
+
               return (
-                <div 
-                  key={proj.id}
-                  className={`project-sidebar-item ${isActive ? "active" : ""}`}
-                  onClick={() => {
-                    selectProject(proj.id, proj.name);
-                    setSidebarOpen(false);
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flexGrow: 1 }}>
-                    <ChevronRight size={14} style={{ flexShrink: 0 }} />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
-                  </div>
-                  <div className="project-sidebar-item-actions">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedProjectToEdit(proj);
-                        setEditProjectName(proj.name);
-                        setEditProjectClient(proj.clientName || "");
-                        setRenameProjectModalOpen(true);
-                      }}
-                      className="btn-icon"
-                      style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
-                      title="Rename Project"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    {isAdmin && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedProjectToDelete(proj);
-                          setDeleteProjectModalOpen(true);
-                        }}
-                        className="btn-icon delete"
-                        style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        title="Delete Project"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {renderProjectSection(
+                    "My Projects",
+                    yourProjects,
+                    yourProjsExpanded,
+                    () => setYourProjsExpanded(!yourProjsExpanded),
+                    yourProjsLimit,
+                    setYourProjsLimit
+                  )}
+                  {renderProjectSection(
+                    "Shared Projects",
+                    sharedProjects,
+                    sharedProjsExpanded,
+                    () => setSharedProjsExpanded(!sharedProjsExpanded),
+                    sharedProjsLimit,
+                    setSharedProjsLimit
+                  )}
+                  {renderProjectSection(
+                    "Archive Projects",
+                    archiveProjects,
+                    archiveProjsExpanded,
+                    () => setArchiveProjsExpanded(!archiveProjsExpanded),
+                    archiveProjsLimit,
+                    setArchiveProjsLimit
+                  )}
                 </div>
               );
-            })}
+            })()}
           </div>
 
           {isAdmin && (
@@ -2838,6 +3018,7 @@ function DrivePageContent() {
                 onClick={handleDeleteProject} 
                 className="btn-primary" 
                 style={{ backgroundColor: "var(--accent-danger)" }}
+                autoFocus
               >
                 Delete Permanently
               </button>
@@ -2875,6 +3056,7 @@ function DrivePageContent() {
                 }} 
                 className="btn-primary" 
                 style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-danger)" }}
+                autoFocus
               >
                 {confirmModal.confirmText || "Confirm"}
               </button>

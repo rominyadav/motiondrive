@@ -118,6 +118,8 @@
   flex-direction: column;
   gap: 6px;
   flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .nav-link {
