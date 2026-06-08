@@ -9,6 +9,7 @@ import {
   CreateMultipartUploadCommand, 
   UploadPartCommand, 
   CompleteMultipartUploadCommand, 
+  AbortMultipartUploadCommand,
   GetObjectCommand, 
   DeleteObjectCommand,
   ListObjectsV2Command,
@@ -312,6 +313,49 @@ export async function completeMultipartUpload(params: {
       .update(assets)
       .set({ status: "completed" })
       .where(eq(assets.id, params.assetId));
+  }
+
+  return { success: true };
+}
+
+/**
+ * 4. Aborts/Cancels an active Multipart Upload with Cloudflare R2 & cleans up DB record (if personal)
+ */
+export async function abortMultipartUpload(params: {
+  uploadId: string;
+  r2Key: string;
+  assetId: string;
+  isSharedDrive?: boolean;
+}) {
+  await requireApprovedUser();
+
+  const bucketName = params.isSharedDrive ? R2_SHARED_BUCKET_NAME : R2_BUCKET_NAME;
+
+  try {
+    const command = new AbortMultipartUploadCommand({
+      Bucket: bucketName,
+      Key: params.r2Key,
+      UploadId: params.uploadId,
+    });
+    await r2Client.send(command);
+  } catch (err) {
+    console.error("Failed to abort multipart upload in R2:", err);
+  }
+
+  // Delete the pending asset record from DB if it is NOT a Shared Drive upload
+  if (!params.isSharedDrive) {
+    try {
+      await db
+        .delete(assets)
+        .where(
+          and(
+            eq(assets.id, params.assetId),
+            eq(assets.status, "pending")
+          )
+        );
+    } catch (err) {
+      console.error("Failed to delete pending asset from DB:", err);
+    }
   }
 
   return { success: true };
