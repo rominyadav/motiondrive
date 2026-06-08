@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { invitations, user } from "@/db/schema";
-import { requireAdmin } from "@/lib/auth-server";
+import { requireAdmin, getSession } from "@/lib/auth-server";
 import { eq, desc } from "drizzle-orm";
 import { resend } from "@/lib/resend";
 import crypto from "crypto";
@@ -124,6 +124,29 @@ export async function updateUserStorageLimit(userId: string, limitBytes: number)
   await db
     .update(user)
     .set({ storageLimit: limitBytes })
+    .where(eq(user.id, userId));
+
+  return { success: true };
+}
+
+/**
+ * Updates a user's role (Strictly Admin-only, Managers are forbidden).
+ */
+export async function updateUserRole(userId: string, role: "admin" | "manager" | "staff") {
+  const session = await getSession();
+
+  if (!session || !session.user) {
+    throw new Error("Unauthorized");
+  }
+
+  const currentUser = session.user as any;
+  if (currentUser.role !== "admin") {
+    throw new Error("Forbidden: Only administrators can modify user roles.");
+  }
+
+  await db
+    .update(user)
+    .set({ role })
     .where(eq(user.id, userId));
 
   return { success: true };
