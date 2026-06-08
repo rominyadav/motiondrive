@@ -2105,20 +2105,26 @@ function DrivePageContent() {
             </div>
 
             {(() => {
+              const currentUserId = session?.user?.id;
+              
               const yourProjects = (projects || []).filter(proj => {
                 const nameLower = (proj.name || "").toLowerCase();
                 const clientLower = (proj.clientName || "").toLowerCase();
-                const isShared = nameLower.includes("shared") || clientLower.includes("shared");
                 const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
-                return !isShared && !isArchive;
+                
+                // My Projects are owned by the current logged-in user
+                const isOwnedByMe = proj.userId === currentUserId;
+                return isOwnedByMe && !isArchive;
               });
 
               const sharedProjects = (projects || []).filter(proj => {
                 const nameLower = (proj.name || "").toLowerCase();
                 const clientLower = (proj.clientName || "").toLowerCase();
-                const isShared = nameLower.includes("shared") || clientLower.includes("shared");
                 const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
-                return isShared && !isArchive;
+                
+                // Shared Projects are owned by anyone else (or legacy projects with no owner)
+                const isOwnedByMe = proj.userId === currentUserId;
+                return !isOwnedByMe && !isArchive;
               });
 
               const archiveProjects = (projects || []).filter(proj => {
