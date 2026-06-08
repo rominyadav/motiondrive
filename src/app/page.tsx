@@ -16,6 +16,7 @@ import {
   initiateMultipartUpload,
   getPresignedPartUrls,
   completeMultipartUpload,
+  abortMultipartUpload,
   listSharedDriveContents,
   createSharedFolder,
   deleteSharedAsset,
@@ -66,7 +67,8 @@ import {
   CheckSquare,
   Square,
   FolderInput,
-  Copy
+  Copy,
+  Minus
 } from "lucide-react";
 import Link from "next/link";
 import "./drive.css";
@@ -122,6 +124,18 @@ export default function DrivePage() {
   // Upload Drawer State
   const [uploadProgress, setUploadProgress] = useState<{ [filename: string]: number }>({});
   const [uploadActive, setUploadActive] = useState(false);
+  const [uploadMinimized, setUploadMinimized] = useState(false);
+
+  // Upload Abort Tracking
+  const uploadDetailsRef = useRef<{
+    [filename: string]: {
+      uploadId: string;
+      r2Key: string;
+      assetId: string;
+      isShared: boolean;
+      controller: AbortController;
+    };
+  }>({});
 
   // Right-Click Context Menu State
   const [contextMenu, setContextMenu] = useState<{
@@ -1028,56 +1042,93 @@ export default function DrivePage() {
   const handleExecutePickerAction = async () => {
     if (!pickerAction) return;
 
-    setLoading(true);
     setDestinationPickerOpen(false);
 
-    try {
-      const sourceIsSharedDrive = explorerMode === "shared";
-      const targetIsSharedDrive = pickerDriveMode === "shared";
-      let targetFolderId: string | null = null;
-      let targetProjectId: string | null = null;
+    // Save variables needed for async execution since selections will be cleared immediately
+    const assetIdsToMove = Array.from(selectedAssetIds);
+    const folderIdsToMove = Array.from(selectedFolderIds);
+    const currentPickerAction = pickerAction;
+    const sourceIsSharedDrive = explorerMode === "shared";
+    const targetIsSharedDrive = pickerDriveMode === "shared";
+    let targetFolderId: string | null = null;
+    let targetProjectId: string | null = null;
 
-      if (targetIsSharedDrive) {
-        targetFolderId = pickerCurrentFolderId;
-      } else {
-        targetFolderId = pickerCurrentFolderId;
-        const firstSegment = pickerFolderPath[0];
-        if (firstSegment && firstSegment.id?.startsWith("PROJECT:")) {
-          targetProjectId = firstSegment.id.substring(8);
-        }
+    if (targetIsSharedDrive) {
+      targetFolderId = pickerCurrentFolderId;
+    } else {
+      targetFolderId = pickerCurrentFolderId;
+      const firstSegment = pickerFolderPath[0];
+      if (firstSegment && firstSegment.id?.startsWith("PROJECT:")) {
+        targetProjectId = firstSegment.id.substring(8);
       }
-
-      if (pickerAction === "move") {
-        await bulkMoveItems({
-          assetIds: Array.from(selectedAssetIds),
-          folderIds: Array.from(selectedFolderIds),
-          targetFolderId,
-          targetProjectId,
-          sourceIsSharedDrive,
-          targetIsSharedDrive
-        });
-        showToast("Items moved successfully!", "success");
-      } else if (pickerAction === "copy") {
-        await bulkCopyItems({
-          assetIds: Array.from(selectedAssetIds),
-          folderIds: Array.from(selectedFolderIds),
-          targetFolderId,
-          targetProjectId,
-          sourceIsSharedDrive,
-          targetIsSharedDrive
-        });
-        showToast("Items copied successfully!", "success");
-      }
-
-      handleClearSelection();
-      await refreshExplorerContents();
-    } catch (err) {
-      console.error(`Bulk ${pickerAction} failed`, err);
-      showToast(`Failed to ${pickerAction} selected items`, "error");
-    } finally {
-      setLoading(false);
-      setPickerAction(null);
     }
+
+    const totalCount = assetIdsToMove.length + folderIdsToMove.length;
+    if (totalCount === 0) {
+      setPickerAction(null);
+      return;
+    }
+
+    // Set up background task label
+    const actionLabel = currentPickerAction === "move" ? "Moving" : "Copying";
+    const taskLabel = `${actionLabel} ${totalCount} item(s) to destination`;
+
+    // Initialize progress tracking in drawer
+    setUploadActive(true);
+    setUploadMinimized(false);
+    setUploadProgress(prev => ({
+      ...prev,
+      [taskLabel]: 0 // 0 means active / in progress
+    }));
+
+    // Clear selection immediately so user can continue using the drive
+    handleClearSelection();
+    setPickerAction(null);
+
+    // Run in background asynchronously without blocking the UI
+    (async () => {
+      try {
+        if (currentPickerAction === "move") {
+          await bulkMoveItems({
+            assetIds: assetIdsToMove,
+            folderIds: folderIdsToMove,
+            targetFolderId,
+            targetProjectId,
+            sourceIsSharedDrive,
+            targetIsSharedDrive
+          });
+          showToast("Items moved successfully!", "success");
+        } else if (currentPickerAction === "copy") {
+          await bulkCopyItems({
+            assetIds: assetIdsToMove,
+            folderIds: folderIdsToMove,
+            targetFolderId,
+            targetProjectId,
+            sourceIsSharedDrive,
+            targetIsSharedDrive
+          });
+          showToast("Items copied successfully!", "success");
+        }
+
+        // Complete the progress tracking
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 100
+        }));
+
+        // Refresh contents to show newly moved items if still in this folder
+        await refreshExplorerContents();
+      } catch (err) {
+        console.error(`Bulk ${currentPickerAction} failed`, err);
+        showToast(`Failed to ${currentPickerAction} selected items`, "error");
+
+        // Mark as failed in progress tracking
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: -2
+        }));
+      }
+    })();
   };
 
   // ==========================================
@@ -1117,8 +1168,19 @@ export default function DrivePage() {
   ) => {
     const filename = file.name;
     setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
+    setUploadMinimized(false); // Auto-expand drawer on new upload
 
     const isShared = explorerMode === "shared";
+    const controller = new AbortController();
+
+    // Register initial tracking in ref so user can cancel immediately
+    uploadDetailsRef.current[filename] = {
+      controller,
+      uploadId: "",
+      r2Key: "",
+      assetId: "",
+      isShared
+    };
 
     try {
       // 10MB Chunks
@@ -1138,6 +1200,19 @@ export default function DrivePage() {
         existingR2Key
       });
 
+      if (controller.signal.aborted) {
+        throw new DOMException("Upload aborted", "AbortError");
+      }
+
+      // Update ref with server-side identifiers for complete cleanup
+      uploadDetailsRef.current[filename] = {
+        controller,
+        uploadId,
+        r2Key,
+        assetId,
+        isShared
+      };
+
       // B. Get presigned URLs for each chunk
       const partNumbers = Array.from({ length: totalChunks }, (_, index) => index + 1);
       const { partUrls } = await getPresignedPartUrls({ 
@@ -1147,11 +1222,19 @@ export default function DrivePage() {
         isSharedDrive: isShared
       });
 
+      if (controller.signal.aborted) {
+        throw new DOMException("Upload aborted", "AbortError");
+      }
+
       // C. Upload chunks to Cloudflare R2 directly in parallel batches
       const parts: { PartNumber: number; ETag: string }[] = [];
       const batchSize = 3; // Upload 3 chunks concurrently
 
       for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += batchSize) {
+        if (controller.signal.aborted) {
+          throw new DOMException("Upload aborted", "AbortError");
+        }
+
         const batch = [];
         for (let b = 0; b < batchSize && chunkIndex + b < totalChunks; b++) {
           const index = chunkIndex + b;
@@ -1164,6 +1247,7 @@ export default function DrivePage() {
             fetch(presignedUrl, {
               method: "PUT",
               body: chunkSlice,
+              signal: controller.signal
             }).then(async (res) => {
               if (!res.ok) throw new Error(`Chunk ${index + 1} upload failed`);
               const etag = res.headers.get("ETag");
@@ -1172,14 +1256,22 @@ export default function DrivePage() {
               
               // Progress tracking
               const completedPartsCount = parts.length;
-              setUploadProgress((prev) => ({
-                ...prev,
-                [filename]: Math.round((completedPartsCount / totalChunks) * 100)
-              }));
+              setUploadProgress((prev) => {
+                // If already cancelled, do not overwrite progress
+                if (prev[filename] === -1) return prev;
+                return {
+                  ...prev,
+                  [filename]: Math.round((completedPartsCount / totalChunks) * 100)
+                };
+              });
             })
           );
         }
         await Promise.all(batch);
+      }
+
+      if (controller.signal.aborted) {
+        throw new DOMException("Upload aborted", "AbortError");
       }
 
       // D. Complete the Multipart upload on R2 and DB index
@@ -1193,11 +1285,61 @@ export default function DrivePage() {
 
       return { success: true, r2Key, assetId };
 
-    } catch (err) {
-      console.error("Multipart upload failed for " + filename, err);
-      showToast(`Failed to upload ${filename}`, "error");
+    } catch (err: any) {
+      const isAborted = err.name === "AbortError" || err.message === "canceled" || controller.signal.aborted;
+      const details = uploadDetailsRef.current[filename];
+
+      if (isAborted) {
+        if (details && details.uploadId) {
+          try {
+            await abortMultipartUpload({
+              uploadId: details.uploadId,
+              r2Key: details.r2Key,
+              assetId: details.assetId,
+              isSharedDrive: details.isShared
+            });
+          } catch (abortErr) {
+            console.error("Failed to clean up aborted upload on server:", abortErr);
+          }
+        }
+        setUploadProgress((prev) => ({ ...prev, [filename]: -1 }));
+      } else {
+        setUploadProgress((prev) => ({ ...prev, [filename]: -2 }));
+        console.error("Multipart upload failed for " + filename, err);
+        showToast(`Failed to upload ${filename}`, "error");
+      }
       throw err;
+    } finally {
+      delete uploadDetailsRef.current[filename];
     }
+  };
+
+  const handleCancelUpload = async (filename: string) => {
+    const details = uploadDetailsRef.current[filename];
+    if (!details) return;
+
+    details.controller.abort();
+
+    setUploadProgress((prev) => ({
+      ...prev,
+      [filename]: -1
+    }));
+
+    if (details.uploadId) {
+      try {
+        await abortMultipartUpload({
+          uploadId: details.uploadId,
+          r2Key: details.r2Key,
+          assetId: details.assetId,
+          isSharedDrive: details.isShared
+        });
+      } catch (err) {
+        console.error("Error aborting upload on server:", err);
+      }
+    }
+
+    delete uploadDetailsRef.current[filename];
+    showToast(`Cancelled upload: ${filename}`, "info");
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2281,27 +2423,161 @@ export default function DrivePage() {
         </div>
       </main>
 
-      {/* FLOATING MULTI-PART UPLOAD PROCESS DRAWER */}
-      {uploadActive && (
+      {/* FLOATING MULTI-PART UPLOAD / OPERATION PROCESS DRAWER */}
+      {uploadActive && !uploadMinimized && (
         <div className="progress-drawer">
-          <div className="drawer-header">
-            <span className="drawer-title">Uploading Video Chunk(s)</span>
-            <button onClick={() => setUploadActive(false)} className="btn-icon" style={{ padding: 2 }}>
-              <ChevronRight size={14} style={{ transform: "rotate(90deg)" }} />
-            </button>
+          <div className="drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <span className="drawer-title" style={{ fontWeight: '600' }}>
+              {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying"))
+                ? "File Operations & Uploads"
+                : "Uploading Video Chunk(s)"}
+            </span>
+            <div className="drawer-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                onClick={() => setUploadMinimized(true)} 
+                className="btn-icon" 
+                style={{ padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Minimize"
+              >
+                <Minus size={14} />
+              </button>
+              {!Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) && (
+                <button 
+                  onClick={() => {
+                    setUploadActive(false);
+                    setUploadProgress({});
+                  }} 
+                  className="btn-icon" 
+                  style={{ padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
           <div className="drawer-body">
-            {Object.entries(uploadProgress).map(([filename, progress]) => (
-              <div key={filename} className="upload-item">
-                <div className="upload-info">
-                  <span className="upload-name">{filename}</span>
-                  <span className="upload-percentage">{progress}%</span>
+            {Object.entries(uploadProgress).map(([filename, progress]) => {
+              const isUploading = progress >= 0 && progress < 100;
+              const isCompleted = progress === 100;
+              const isCancelled = progress === -1;
+              const isFailed = progress === -2;
+              const isBackgroundOp = filename.startsWith("Moving") || filename.startsWith("Copying");
+
+              return (
+                <div key={filename} className="upload-item">
+                  <div className="upload-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <span className="upload-name" title={filename} style={{ flexGrow: 1, marginRight: '8px' }}>
+                      {filename}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <span className="upload-status-text" style={{ 
+                        fontSize: '12px', 
+                        fontWeight: '500',
+                        color: isCompleted 
+                          ? 'var(--accent-success, #10b981)' 
+                          : isCancelled 
+                            ? 'var(--text-secondary)' 
+                            : isFailed 
+                              ? 'var(--accent-danger, #ef4444)' 
+                              : 'var(--text-secondary)'
+                      }}>
+                        {isCompleted && "Completed"}
+                        {isCancelled && "Cancelled"}
+                        {isFailed && "Failed"}
+                        {isUploading && (isBackgroundOp ? "In Progress" : `${progress}%`)}
+                      </span>
+
+                      {isUploading && !isBackgroundOp && (
+                        <button
+                          onClick={() => handleCancelUpload(filename)}
+                          className="btn-icon cancel-upload-btn"
+                          style={{ 
+                            padding: '2px', 
+                            color: 'var(--text-muted)',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                          title="Cancel Upload"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="progress-track">
+                    <div 
+                      className={`progress-bar ${isCancelled ? 'cancelled' : isFailed ? 'failed' : ''} ${isBackgroundOp && isUploading ? 'indeterminate' : ''}`} 
+                      style={{ 
+                        width: `${isCancelled || isFailed ? 100 : (isBackgroundOp && isUploading) ? 100 : progress}%`,
+                        background: isCancelled 
+                          ? 'var(--border-color, #374151)' 
+                          : isFailed 
+                            ? 'var(--accent-danger, #ef4444)' 
+                            : (isBackgroundOp && isUploading)
+                              ? undefined
+                              : 'linear-gradient(90deg, var(--accent-blue), var(--accent-indigo))'
+                      }} 
+                    />
+                  </div>
                 </div>
-                <div className="progress-track">
-                  <div className="progress-bar" style={{ width: `${progress}%` }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* FLOATING MINIMIZED PILL */}
+      {uploadActive && uploadMinimized && (
+        <div 
+          className="upload-minimized-pill" 
+          onClick={() => setUploadMinimized(false)}
+          title="Click to expand upload status"
+        >
+          <div className="minimized-pill-content">
+            {Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ? (
+              <Loader2 className="upload-spin-icon" size={16} />
+            ) : (
+              <CheckCircle size={16} style={{ color: "var(--accent-success, #10b981)" }} />
+            )}
+            <span className="minimized-pill-text">
+              {(() => {
+                const activeProgresses = Object.entries(uploadProgress).filter(([_, p]) => p >= 0 && p < 100);
+                const hasActiveOps = activeProgresses.some(([k]) => k.startsWith("Moving") || k.startsWith("Copying"));
+                const hasActiveUploads = activeProgresses.some(([k]) => !k.startsWith("Moving") && !k.startsWith("Copying"));
+
+                if (activeProgresses.length > 0) {
+                  if (hasActiveUploads && hasActiveOps) {
+                    return "Uploading & transferring items...";
+                  } else if (hasActiveOps) {
+                    const opCount = activeProgresses.filter(([k]) => k.startsWith("Moving") || k.startsWith("Copying")).length;
+                    return `${opCount} file operation${opCount > 1 ? 's' : ''} in progress`;
+                  } else {
+                    const uploadCount = activeProgresses.length;
+                    const avgProgress = Math.round(activeProgresses.reduce((sum, [_, p]) => sum + p, 0) / uploadCount);
+                    return `Uploading ${uploadCount} file${uploadCount > 1 ? 's' : ''} (${avgProgress}%)`;
+                  }
+                }
+                return "Operations completed";
+              })()}
+            </span>
+          </div>
+          <div className="minimized-pill-actions" onClick={(e) => e.stopPropagation()}>
+            {!Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) && (
+              <button 
+                onClick={() => {
+                  setUploadActive(false);
+                  setUploadProgress({});
+                }} 
+                className="btn-icon minimized-close-btn"
+                style={{ padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="Close"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
         </div>
       )}

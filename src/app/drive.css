@@ -522,6 +522,98 @@
   transition: width 0.1s linear;
 }
 
+.progress-bar.indeterminate {
+  background: linear-gradient(90deg, var(--accent-blue), var(--accent-indigo), var(--accent-blue));
+  background-size: 200% 100%;
+  animation: progress-slide 1.5s infinite linear;
+}
+
+@keyframes progress-slide {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.cancel-upload-btn {
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.cancel-upload-btn:hover {
+  color: var(--accent-danger, #ef4444) !important;
+  background-color: rgba(239, 68, 68, 0.15) !important;
+  border-radius: 4px;
+}
+
+/* FLOATING MINIMIZED PILL */
+.upload-minimized-pill {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  height: 44px;
+  padding: 0 16px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  box-shadow: var(--shadow-lg), 0 0 15px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  z-index: 100;
+  cursor: pointer;
+  transition: transform var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast);
+  backdrop-filter: blur(8px);
+}
+
+.upload-minimized-pill:hover {
+  transform: translateY(-2px);
+  background-color: var(--bg-tertiary);
+  border-color: var(--accent-blue);
+}
+
+.minimized-pill-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.minimized-pill-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.upload-spin-icon {
+  color: var(--accent-blue);
+  animation: spin-loader 2s linear infinite;
+}
+
+.minimized-pill-actions {
+  display: flex;
+  align-items: center;
+}
+
+.minimized-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.minimized-close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+@keyframes spin-loader {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ==========================================
    ADMIN INTERFACE
    ========================================== */
