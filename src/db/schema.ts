@@ -16,6 +16,7 @@ export const user = pgTable("user", {
   // Custom Extensions for Organization Drive
   role: text("role").$type<"admin" | "staff">().default("staff").notNull(),
   status: text("status").$type<"pending" | "approved" | "suspended">().default("pending").notNull(),
+  storageLimit: bigint("storageLimit", { mode: "number" }).default(107374182400).notNull(), // 100 GB default
 });
 
 export const session = pgTable("session", {

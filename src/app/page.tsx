@@ -27,7 +27,8 @@ import {
   renameSharedFolder,
   bulkDeleteItems,
   bulkMoveItems,
-  bulkCopyItems
+  bulkCopyItems,
+  getUserStorageStats
 } from "@/app/actions/drive";
 import { 
   Folder, 
@@ -70,6 +71,18 @@ import "./drive.css";
 export default function DrivePage() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Storage Quota State
+  const [storageStats, setStorageStats] = useState<{ used: number; limit: number; available: number } | null>(null);
+
+  const fetchStorageStats = async () => {
+    try {
+      const stats = await getUserStorageStats();
+      setStorageStats(stats);
+    } catch (err) {
+      console.error("Failed to fetch storage stats", err);
+    }
+  };
 
   // Dual-Drive State
   const [explorerMode, setExplorerMode] = useState<"personal" | "shared">("personal");
@@ -464,6 +477,7 @@ export default function DrivePage() {
       }
 
       setSession(sessionData);
+      fetchStorageStats();
 
       // Load initial Drive data
       try {
@@ -497,6 +511,7 @@ export default function DrivePage() {
           });
           setFolders(loadedFolders);
           setAssets(loadedAssets);
+          fetchStorageStats();
         }
       } catch (err) {
         console.error("Failed to load drive contents", err);
@@ -1051,6 +1066,7 @@ export default function DrivePage() {
       });
       setFolders(loadedFolders);
       setAssets(loadedAssets);
+      fetchStorageStats();
     }
   };
 
@@ -1626,6 +1642,45 @@ export default function DrivePage() {
             </Link>
           )}
         </nav>
+
+        {/* Storage Indicator */}
+        {storageStats && (
+          <div style={{
+            padding: "16px",
+            background: "rgba(255, 255, 255, 0.02)",
+            border: "1px solid var(--border-color)",
+            borderRadius: "12px",
+            margin: "0 16px 16px 16px",
+            fontSize: "12px",
+            flexShrink: 0
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontWeight: "500" }}>
+              <span style={{ color: "var(--text-secondary)" }}>Storage</span>
+              <span style={{ color: "var(--text-primary)" }}>
+                {(storageStats.used / (1024 * 1024 * 1024)).toFixed(1)} GB / {(storageStats.limit / (1024 * 1024 * 1024)).toFixed(0)} GB
+              </span>
+            </div>
+            <div style={{
+              width: "100%",
+              height: "6px",
+              background: "rgba(255, 255, 255, 0.05)",
+              borderRadius: "9999px",
+              overflow: "hidden"
+            }}>
+              <div style={{
+                width: `${Math.min(100, (storageStats.used / storageStats.limit) * 100)}%`,
+                height: "100%",
+                background: "linear-gradient(90deg, var(--accent-blue), var(--accent-indigo))",
+                borderRadius: "9999px",
+                transition: "width 0.3s ease"
+              }} />
+            </div>
+            <div style={{ marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
+              <span>{((storageStats.used / storageStats.limit) * 100).toFixed(0)}% Used</span>
+              <span>{(storageStats.available / (1024 * 1024 * 1024)).toFixed(1)} GB Free</span>
+            </div>
+          </div>
+        )}
 
         {/* User Card */}
         <div className="sidebar-user">
