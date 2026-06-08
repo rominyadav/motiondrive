@@ -14,7 +14,7 @@ export const user = pgTable("user", {
   updatedAt: timestamp("updatedAt").notNull(),
   
   // Custom Extensions for Organization Drive
-  role: text("role").$type<"admin" | "staff">().default("staff").notNull(),
+  role: text("role").$type<"admin" | "manager" | "staff">().default("staff").notNull(),
   status: text("status").$type<"pending" | "approved" | "suspended">().default("pending").notNull(),
   storageLimit: bigint("storageLimit", { mode: "number" }).default(107374182400).notNull(), // 100 GB default
 });
@@ -92,7 +92,7 @@ export const assets = pgTable("asset", {
 export const invitations = pgTable("invitation", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
-  role: text("role").$type<"admin" | "staff">().default("staff").notNull(),
+  role: text("role").$type<"admin" | "manager" | "staff">().default("staff").notNull(),
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expiresAt").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

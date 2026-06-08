@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { inviteUser, listUsers, listInvitations, updateUserStatus, updateUserStorageLimit } from "@/app/actions/admin";
+import { inviteUser, listUsers, listInvitations, updateUserStatus, updateUserStorageLimit, updateUserRole } from "@/app/actions/admin";
 import { Users, Mail, ShieldAlert, ArrowLeft, LogOut, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import Link from "next/link";
 import "../drive.css";
@@ -14,7 +14,7 @@ export default function AdminPage() {
   const [invites, setInvitations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"admin" | "staff">("staff");
+  const [inviteRole, setInviteRole] = useState<"admin" | "manager" | "staff">("staff");
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteLoading, setInviteLoading] = useState(false);
   const router = useRouter();
@@ -47,7 +47,7 @@ export default function AdminPage() {
       }
 
       const user = session.user as any;
-      if (user.role !== "admin") {
+      if (user.role !== "admin" && user.role !== "manager") {
         router.push("/");
         return;
       }
@@ -170,9 +170,56 @@ export default function AdminPage() {
                     </div>
 
                     <div>
-                      <span className="badge" style={{ backgroundColor: u.role === "admin" ? "rgba(99, 102, 241, 0.1)" : "var(--border-color)", color: u.role === "admin" ? "var(--accent-indigo)" : "var(--text-primary)" }}>
-                        {u.role}
-                      </span>
+                      {currentUser?.role === "admin" && u.id !== currentUser.id ? (
+                        <select
+                          className="form-select"
+                          style={{
+                            height: "28px",
+                            padding: "0 8px",
+                            fontSize: "12px",
+                            width: "110px",
+                            background: "rgba(255, 255, 255, 0.03)",
+                            border: "1px solid var(--border-color)",
+                            borderRadius: "6px",
+                            color: "var(--text-primary)",
+                            cursor: "pointer"
+                          }}
+                          value={u.role}
+                          onChange={async (e) => {
+                            const newRole = e.target.value as "admin" | "manager" | "staff";
+                            try {
+                              await updateUserRole(u.id, newRole);
+                              showToast(`Successfully updated ${u.name}'s role to ${newRole}!`, "success");
+                              const updated = await listUsers();
+                              setUsers(updated);
+                            } catch (err: any) {
+                              showToast(err.message || "Failed to update role", "error");
+                            }
+                          }}
+                        >
+                          <option value="staff">staff</option>
+                          <option value="manager">manager</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      ) : (
+                        <span 
+                          className="badge" 
+                          style={{ 
+                            backgroundColor: u.role === "admin" 
+                              ? "rgba(99, 102, 241, 0.1)" 
+                              : u.role === "manager" 
+                                ? "rgba(168, 85, 247, 0.1)" 
+                                : "var(--border-color)", 
+                            color: u.role === "admin" 
+                              ? "var(--accent-indigo)" 
+                              : u.role === "manager" 
+                                ? "#a78bfa" 
+                                : "var(--text-primary)" 
+                          }}
+                        >
+                          {u.role}
+                        </span>
+                      )}
                     </div>
 
                     <div>
@@ -301,6 +348,7 @@ export default function AdminPage() {
                   onChange={(e) => setInviteRole(e.target.value as any)}
                 >
                   <option value="staff">Staff (Video Editor / Creator)</option>
+                  <option value="manager">Manager (Approve & Invite Users)</option>
                   <option value="admin">Admin (Full Access & Controller)</option>
                 </select>
               </div>
