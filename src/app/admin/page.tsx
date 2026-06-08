@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { inviteUser, listUsers, listInvitations, updateUserStatus, updateUserStorageLimit, updateUserRole } from "@/app/actions/admin";
+import { inviteUser, listUsers, listInvitations, updateUserStatus, updateUserStorageLimit, updateUserRole, revokeInvitation } from "@/app/actions/admin";
 import { Users, Mail, ShieldAlert, ArrowLeft, LogOut, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import Link from "next/link";
 import "../drive.css";
@@ -89,6 +89,21 @@ export default function AdminPage() {
       setInviteMessage(err.message || "Failed to send invitation.");
     } finally {
       setInviteLoading(false);
+    }
+  };
+
+  const handleRevokeInvite = async (invitationId: string, email: string) => {
+    if (!confirm(`Are you sure you want to revoke the invitation for ${email}?`)) {
+      return;
+    }
+
+    try {
+      await revokeInvitation(invitationId);
+      showToast(`Successfully revoked invitation for ${email}!`, "success");
+      const updated = await listInvitations();
+      setInvitations(updated);
+    } catch (err) {
+      showToast("Failed to revoke invitation", "error");
     }
   };
 
@@ -281,20 +296,39 @@ export default function AdminPage() {
                 <p style={{ fontSize: "14px", color: "var(--text-secondary)", marginTop: "16px" }}>No pending invitations found.</p>
               ) : (
                 <div className="files-container" style={{ marginTop: "16px" }}>
-                  <div className="table-header" style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
+                  <div className="table-header" style={{ gridTemplateColumns: "1.5fr 1fr 1.2fr 1fr" }}>
                     <div>Email</div>
                     <div>Invited As</div>
-                    <div style={{ textAlign: "right" }}>Expires</div>
+                    <div>Expires</div>
+                    <div style={{ textAlign: "right" }}>Actions</div>
                   </div>
 
                   {invites.map((inv) => (
-                    <div className="file-row" key={inv.id} style={{ gridTemplateColumns: "2fr 1fr 1fr" }}>
-                      <span className="file-name">{inv.email}</span>
+                    <div className="file-row" key={inv.id} style={{ gridTemplateColumns: "1.5fr 1fr 1.2fr 1fr" }}>
+                      <span className="file-name" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{inv.email}</span>
                       <div>
                         <span className="badge" style={{ backgroundColor: "var(--border-color)" }}>{inv.role}</span>
                       </div>
-                      <div style={{ textAlign: "right", fontSize: "12px", color: "var(--text-secondary)" }}>
+                      <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                         {new Date(inv.expiresAt).toLocaleDateString()}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button
+                          onClick={() => handleRevokeInvite(inv.id, inv.email)}
+                          style={{
+                            height: "26px",
+                            padding: "0 10px",
+                            fontSize: "11px",
+                            background: "rgba(239, 68, 68, 0.1)",
+                            color: "var(--accent-danger)",
+                            border: "1px solid rgba(239, 68, 68, 0.2)",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            transition: "all 0.2s"
+                          }}
+                        >
+                          Revoke
+                        </button>
                       </div>
                     </div>
                   ))}

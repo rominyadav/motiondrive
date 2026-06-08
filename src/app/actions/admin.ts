@@ -124,6 +124,19 @@ export async function listInvitations() {
 }
 
 /**
+ * Revokes / deletes a pending invitation.
+ */
+export async function revokeInvitation(invitationId: string) {
+  await requireAdmin();
+
+  await db
+    .delete(invitations)
+    .where(eq(invitations.id, invitationId));
+
+  return { success: true };
+}
+
+/**
  * Updates a user's personal storage limit (Admin-only).
  */
 export async function updateUserStorageLimit(userId: string, limitBytes: number) {
