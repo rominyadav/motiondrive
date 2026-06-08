@@ -15,6 +15,13 @@
       "when": 1780855875605,
       "tag": "0001_magenta_piledriver",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780913095920,
+      "tag": "0002_aromatic_miss_america",
+      "breakpoints": true
     }
   ]
 }

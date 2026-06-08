@@ -21,6 +21,8 @@ import {
   deleteSharedAsset,
   deleteSharedFolder,
   getSharedDownloadUrl,
+  listArchiveDriveContents,
+  getArchiveDownloadUrl,
   renameAsset,
   renameFolder,
   renameSharedAsset,
@@ -46,6 +48,7 @@ import {
   Sliders, 
   Loader2,
   Share2,
+  Archive,
   FolderOpen,
   Edit2,
   Info,
@@ -84,9 +87,10 @@ export default function DrivePage() {
     }
   };
 
-  // Dual-Drive State
-  const [explorerMode, setExplorerMode] = useState<"personal" | "shared">("personal");
+  // Tri-Drive State
+  const [explorerMode, setExplorerMode] = useState<"personal" | "shared" | "archive">("personal");
   const [sharedFolderPath, setSharedFolderPath] = useState<string[]>([]);
+  const [archiveFolderPath, setArchiveFolderPath] = useState<string[]>([]);
 
   // Drive Navigation State
   const [projects, setProjects] = useState<any[]>([]);
@@ -337,6 +341,8 @@ export default function DrivePage() {
     try {
       const { downloadUrl } = explorerMode === "shared"
         ? await getSharedDownloadUrl(asset.id)
+        : explorerMode === "archive"
+        ? await getArchiveDownloadUrl(asset.id)
         : await getDownloadUrl(asset.id);
 
       await navigator.clipboard.writeText(downloadUrl);
@@ -357,6 +363,8 @@ export default function DrivePage() {
     try {
       const { downloadUrl } = explorerMode === "shared"
         ? await getSharedDownloadUrl(asset.id)
+        : explorerMode === "archive"
+        ? await getArchiveDownloadUrl(asset.id)
         : await getDownloadUrl(asset.id);
 
       setPreviewUrl(downloadUrl);
@@ -504,6 +512,11 @@ export default function DrivePage() {
           const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
           setFolders(loadedFolders);
           setAssets(loadedAssets);
+        } else if (explorerMode === "archive") {
+          const prefix = archiveFolderPath.length > 0 ? archiveFolderPath.join("/") + "/" : "";
+          const { folders: loadedFolders, assets: loadedAssets } = await listArchiveDriveContents(prefix);
+          setFolders(loadedFolders);
+          setAssets(loadedAssets);
         } else {
           const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
             projectId: selectedProjectId,
@@ -518,7 +531,7 @@ export default function DrivePage() {
       }
     }
     loadContents();
-  }, [selectedProjectId, currentFolderId, explorerMode, sharedFolderPath, loading, session]);
+  }, [selectedProjectId, currentFolderId, explorerMode, sharedFolderPath, archiveFolderPath, loading, session]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -623,7 +636,11 @@ export default function DrivePage() {
   const navigateToFolder = (folder: { id: string; name: string; isR2Physical?: boolean }) => {
     if (folder.isR2Physical) {
       const parts = folder.id.split("/").filter(Boolean);
-      setSharedFolderPath(parts);
+      if (explorerMode === "archive") {
+        setArchiveFolderPath(parts);
+      } else {
+        setSharedFolderPath(parts);
+      }
     } else {
       setCurrentFolderId(folder.id);
       setFolderPath((prev) => [...prev, { id: folder.id, name: folder.name }]);
@@ -675,11 +692,25 @@ export default function DrivePage() {
     setSharedFolderPath(path);
   };
 
+  // Switch to Archive Drive mode
+  const selectArchiveDrive = () => {
+    setExplorerMode("archive");
+    setArchiveFolderPath([]);
+    setSelectedProjectId(null);
+    setCurrentFolderId(null);
+  };
+
+  const handleBreadcrumbClickArchive = (path: string[]) => {
+    setArchiveFolderPath(path);
+  };
+
   // Download File via Presigned URL
   const handleDownloadFile = async (assetId: string) => {
     try {
       const { downloadUrl, filename } = explorerMode === "shared"
         ? await getSharedDownloadUrl(assetId)
+        : explorerMode === "archive"
+        ? await getArchiveDownloadUrl(assetId)
         : await getDownloadUrl(assetId);
 
       // Create a temporary anchor element to trigger high-speed direct uploader
@@ -916,6 +947,7 @@ export default function DrivePage() {
 
   // Open Destination Picker Modal
   const handleOpenDestinationPicker = async (action: "move" | "copy") => {
+    if (explorerMode === "archive") return;
     setPickerAction(action);
     setPickerDriveMode(explorerMode);
     setPickerCurrentFolderId(null);
@@ -1054,9 +1086,15 @@ export default function DrivePage() {
 
   const refreshExplorerContents = async () => {
     const isShared = explorerMode === "shared";
-    const prefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+    const isArchive = explorerMode === "archive";
     if (isShared) {
+      const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
       const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
+      setFolders(loadedFolders);
+      setAssets(loadedAssets);
+    } else if (isArchive) {
+      const prefix = archiveFolderPath.length > 0 ? archiveFolderPath.join("/") + "/" : "";
+      const { folders: loadedFolders, assets: loadedAssets } = await listArchiveDriveContents(prefix);
       setFolders(loadedFolders);
       setAssets(loadedAssets);
     } else {
@@ -1565,6 +1603,17 @@ export default function DrivePage() {
             <span>Shared Drive</span>
           </button>
 
+          <button 
+            onClick={() => {
+              selectArchiveDrive();
+              setSidebarOpen(false);
+            }} 
+            className={`nav-link ${explorerMode === "archive" ? "active" : ""}`}
+          >
+            <Archive size={18} />
+            <span>Archive Drive</span>
+          </button>
+
           <div style={{ marginTop: "16px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "8px" }}>
               <span className="section-title" style={{ margin: 0, fontSize: "11px" }}>Projects</span>
@@ -1753,6 +1802,28 @@ export default function DrivePage() {
                   </div>
                 ))}
               </>
+            ) : explorerMode === "archive" ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span 
+                    className={`breadcrumb-item ${archiveFolderPath.length === 0 ? "active" : ""}`}
+                    onClick={() => handleBreadcrumbClickArchive([])}
+                  >
+                    Archive Drive
+                  </span>
+                </div>
+                {archiveFolderPath.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <ChevronRight size={16} style={{ opacity: 0.5 }} />
+                    <span 
+                      className={`breadcrumb-item ${i === archiveFolderPath.length - 1 ? "active" : ""}`}
+                      onClick={() => handleBreadcrumbClickArchive(archiveFolderPath.slice(0, i + 1))}
+                    >
+                      {item}
+                    </span>
+                  </div>
+                ))}
+              </>
             ) : (
               folderPath.map((item, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -1772,6 +1843,8 @@ export default function DrivePage() {
             <h2 className="explorer-title">
               {explorerMode === "shared" 
                 ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
+                : explorerMode === "archive"
+                ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
                 : (folderPath[folderPath.length - 1]?.name || "My Drive")
               }
             </h2>
@@ -1793,89 +1866,91 @@ export default function DrivePage() {
                 </button>
               </div>
 
-              <div style={{ position: "relative" }}>
-                <button 
-                  onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
-                  className="btn-primary"
-                  style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px" }}
-                >
-                  <Plus size={18} />
-                  <span>New</span>
-                  <ChevronDown size={14} style={{ opacity: 0.8 }} />
-                </button>
+              {explorerMode !== "archive" && (
+                <div style={{ position: "relative" }}>
+                  <button 
+                    onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
+                    className="btn-primary"
+                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px" }}
+                  >
+                    <Plus size={18} />
+                    <span>New</span>
+                    <ChevronDown size={14} style={{ opacity: 0.8 }} />
+                  </button>
 
-                {newDropdownOpen && (
-                  <div className="new-dropdown-menu animate-scale-up">
-                    <button 
-                      onClick={() => {
-                        setFolderModalOpen(true);
-                        setNewDropdownOpen(false);
-                      }} 
-                      className="dropdown-item"
-                    >
-                      <FolderPlus size={16} />
-                      <span>New Folder</span>
-                    </button>
-                    
-                    <button 
-                      onClick={() => {
-                        handleOpenTextCreator();
-                        setNewDropdownOpen(false);
-                      }} 
-                      className="dropdown-item"
-                    >
-                      <FileText size={16} />
-                      <span>Create Text File</span>
-                    </button>
+                  {newDropdownOpen && (
+                    <div className="new-dropdown-menu animate-scale-up">
+                      <button 
+                        onClick={() => {
+                          setFolderModalOpen(true);
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FolderPlus size={16} />
+                        <span>New Folder</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          handleOpenTextCreator();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FileText size={16} />
+                        <span>Create Text File</span>
+                      </button>
 
-                    <button 
-                      onClick={() => {
-                        handleOpenDocsCreator();
-                        setNewDropdownOpen(false);
-                      }} 
-                      className="dropdown-item"
-                    >
-                      <FileText size={16} style={{ color: "var(--accent-indigo)" }} />
-                      <span>Docs (Rich Document)</span>
-                    </button>
+                      <button 
+                        onClick={() => {
+                          handleOpenDocsCreator();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FileText size={16} style={{ color: "var(--accent-indigo)" }} />
+                        <span>Docs (Rich Document)</span>
+                      </button>
 
-                    <button 
-                      onClick={() => {
-                        handleOpenSheetCreator();
-                        setNewDropdownOpen(false);
-                      }} 
-                      className="dropdown-item"
-                    >
-                      <Table size={16} style={{ color: "var(--accent-success, #10b981)" }} />
-                      <span>Blank Sheet</span>
-                    </button>
+                      <button 
+                        onClick={() => {
+                          handleOpenSheetCreator();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <Table size={16} style={{ color: "var(--accent-success, #10b981)" }} />
+                        <span>Blank Sheet</span>
+                      </button>
 
-                    <hr className="dropdown-divider" />
+                      <hr className="dropdown-divider" />
 
-                    <button 
-                      onClick={() => {
-                        triggerFileSelect();
-                        setNewDropdownOpen(false);
-                      }} 
-                      className="dropdown-item"
-                    >
-                      <Upload size={16} />
-                      <span>Upload File</span>
-                    </button>
+                      <button 
+                        onClick={() => {
+                          triggerFileSelect();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <Upload size={16} />
+                        <span>Upload File</span>
+                      </button>
 
-                    <button 
-                      onClick={() => {
-                        triggerFolderSelect();
-                        setNewDropdownOpen(false);
-                      }} 
-                      className="dropdown-item"
-                    >
-                      <FolderUp size={16} />
-                      <span>Upload Folder</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+                      <button 
+                        onClick={() => {
+                          triggerFolderSelect();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FolderUp size={16} />
+                        <span>Upload Folder</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1957,7 +2032,7 @@ export default function DrivePage() {
                         <div className="file-date">Folder</div>
 
                         <div className="file-actions">
-                          {isAdmin && (
+                          {isAdmin && explorerMode !== "archive" && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2022,7 +2097,7 @@ export default function DrivePage() {
                           >
                             <Download size={16} />
                           </button>
-                          {isAdmin && (
+                          {isAdmin && explorerMode !== "archive" && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2086,7 +2161,7 @@ export default function DrivePage() {
 
                           <Folder className="folder-icon" size={24} />
                           <span className="folder-name">{folder.name}</span>
-                          {isAdmin && (
+                          {isAdmin && explorerMode !== "archive" && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2183,7 +2258,7 @@ export default function DrivePage() {
                           >
                             <Download size={14} />
                           </button>
-                          {isAdmin && (
+                          {isAdmin && explorerMode !== "archive" && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2432,16 +2507,18 @@ export default function DrivePage() {
                 <FolderOpen size={16} />
                 <span>Open Folder</span>
               </button>
-              <button 
-                onClick={() => {
-                  handleOpenRename(contextMenu.item, "folder");
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <Edit2 size={16} />
-                <span>Rename</span>
-              </button>
+              {explorerMode !== "archive" && (
+                <button 
+                  onClick={() => {
+                    handleOpenRename(contextMenu.item, "folder");
+                    setContextMenu(null);
+                  }}
+                  className="context-menu-item"
+                >
+                  <Edit2 size={16} />
+                  <span>Rename</span>
+                </button>
+              )}
               <button 
                 onClick={() => {
                   handleOpenInfo(contextMenu.item, "folder");
@@ -2452,7 +2529,7 @@ export default function DrivePage() {
                 <Info size={16} />
                 <span>Get Info</span>
               </button>
-              {isAdmin && (
+              {isAdmin && explorerMode !== "archive" && (
                 <button 
                   onClick={() => {
                     handleDeleteFolder(contextMenu.item.id, contextMenu.item.name);
@@ -2497,7 +2574,7 @@ export default function DrivePage() {
                 <LinkIcon size={16} />
                 <span>Copy Link</span>
               </button>
-              {(() => {
+              {explorerMode !== "archive" && (() => {
                 const filename = contextMenu.item?.filename || "";
                 const isEditable = 
                   filename.endsWith(".txt") || 
@@ -2529,16 +2606,18 @@ export default function DrivePage() {
                 }
                 return null;
               })()}
-              <button 
-                onClick={() => {
-                  handleOpenRename(contextMenu.item, "file");
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <Edit2 size={16} />
-                <span>Rename</span>
-              </button>
+              {explorerMode !== "archive" && (
+                <button 
+                  onClick={() => {
+                    handleOpenRename(contextMenu.item, "file");
+                    setContextMenu(null);
+                  }}
+                  className="context-menu-item"
+                >
+                  <Edit2 size={16} />
+                  <span>Rename</span>
+                </button>
+              )}
               <button 
                 onClick={() => {
                   handleOpenInfo(contextMenu.item, "file");
@@ -2549,7 +2628,7 @@ export default function DrivePage() {
                 <Info size={16} />
                 <span>Get Info</span>
               </button>
-              {isAdmin && (
+              {isAdmin && explorerMode !== "archive" && (
                 <button 
                   onClick={() => {
                     handleDeleteFile(contextMenu.item.id);
@@ -2955,25 +3034,29 @@ export default function DrivePage() {
             </div>
 
             <div className="bulk-bar-actions">
-              <button 
-                onClick={() => handleOpenDestinationPicker("copy")}
-                className="btn-bulk btn-bulk-copy"
-                title="Copy selected items to a folder"
-              >
-                <Copy size={16} />
-                <span>Copy</span>
-              </button>
+              {explorerMode !== "archive" && (
+                <>
+                  <button 
+                    onClick={() => handleOpenDestinationPicker("copy")}
+                    className="btn-bulk btn-bulk-copy"
+                    title="Copy selected items to a folder"
+                  >
+                    <Copy size={16} />
+                    <span>Copy</span>
+                  </button>
 
-              <button 
-                onClick={() => handleOpenDestinationPicker("move")}
-                className="btn-bulk btn-bulk-move"
-                title="Move selected items to a folder"
-              >
-                <FolderInput size={16} />
-                <span>Move</span>
-              </button>
+                  <button 
+                    onClick={() => handleOpenDestinationPicker("move")}
+                    className="btn-bulk btn-bulk-move"
+                    title="Move selected items to a folder"
+                  >
+                    <FolderInput size={16} />
+                    <span>Move</span>
+                  </button>
+                </>
+              )}
 
-              {isAdmin && (
+              {isAdmin && explorerMode !== "archive" && (
                 <button 
                   onClick={handleBulkDelete}
                   className="btn-bulk btn-bulk-delete"
@@ -2984,7 +3067,7 @@ export default function DrivePage() {
                 </button>
               )}
 
-              <div className="bulk-bar-divider" />
+              {explorerMode !== "archive" && <div className="bulk-bar-divider" />}
 
               <button 
                 onClick={handleClearSelection}
