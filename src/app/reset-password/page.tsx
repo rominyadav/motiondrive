@@ -201,17 +201,76 @@ function ResetPasswordForm() {
           <form onSubmit={handleResetViaOtp}>
             <p className="auth-subtitle">Verify OTP and enter a new password</p>
 
-            <div className="form-group">
-              <label className="form-label" style={{ textAlign: "center", display: "block" }}>Enter 6-Digit OTP Code</label>
+            <div className="form-group" style={{ display: "flex", flexDirection: "column", alignItems: "center", marginBottom: "24px" }}>
+              <label className="form-label" style={{ textAlign: "center", display: "block", marginBottom: "16px", color: "var(--text-secondary)" }}>
+                Enter 6-Digit Security Code
+              </label>
+              
+              {/* Styled OTP Slots */}
+              <div 
+                style={{ 
+                  display: "flex", 
+                  gap: "10px", 
+                  justifyContent: "center", 
+                  position: "relative",
+                  cursor: "text",
+                  marginBottom: "8px"
+                }}
+                onClick={() => document.getElementById("otp-hidden-input")?.focus()}
+              >
+                {[0, 1, 2, 3, 4, 5].map((index) => {
+                  const digit = otp[index] || "";
+                  const isFocused = otp.length === index || (otp.length === 6 && index === 5);
+                  return (
+                    <div
+                      key={index}
+                      style={{
+                        width: "44px",
+                        height: "50px",
+                        borderRadius: "10px",
+                        border: isFocused 
+                          ? "2px solid var(--accent-indigo)" 
+                          : "1px solid var(--border-color)",
+                        background: isFocused
+                          ? "rgba(99, 102, 241, 0.08)"
+                          : "rgba(255, 255, 255, 0.03)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "20px",
+                        fontWeight: "700",
+                        color: digit ? "#ffffff" : "rgba(255, 255, 255, 0.15)",
+                        transition: "all 0.2s ease",
+                        boxShadow: isFocused 
+                          ? "0 0 10px rgba(99, 102, 241, 0.25)" 
+                          : "none",
+                      }}
+                    >
+                      {digit || "•"}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Invisible input to capture typing */}
               <input
+                id="otp-hidden-input"
                 type="text"
-                className="form-input"
+                pattern="\d*"
+                inputMode="numeric"
                 value={otp}
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                style={{
+                  position: "absolute",
+                  opacity: 0,
+                  width: "1px",
+                  height: "1px",
+                  overflow: "hidden",
+                  pointerEvents: "none"
+                }}
                 required
-                placeholder="e.g. 123456"
-                style={{ textAlign: "center", fontSize: "20px", letterSpacing: "8px", fontWeight: "700" }}
                 maxLength={6}
+                autoFocus
                 disabled={loading}
               />
             </div>
