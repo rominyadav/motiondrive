@@ -153,7 +153,12 @@ export async function GET(
       );
     }
 
-    // 3. Retrieve target object location
+    // 3. Folder vs File check
+    if (link.folderId || link.physicalPrefix) {
+      return NextResponse.redirect(new URL(`/share/${id}/view`, request.url), 302);
+    }
+
+    // 4. Retrieve target file location
     let bucket: string;
     let key: string;
     let filename: string;

@@ -657,6 +657,32 @@ function DrivePageContent() {
     }
   };
 
+  // Copy Secure Proxy Folder Link to Clipboard
+  const handleCopyFolderLink = async (folder: any) => {
+    try {
+      const isShared = explorerMode === "shared";
+      const isArchive = explorerMode === "archive";
+
+      const params = {
+        folderId: (!isShared && !isArchive) ? folder.id : null,
+        physicalPrefix: (isShared || isArchive) ? folder.id : null,
+        physicalBucket: isShared ? "shared" : isArchive ? "archive" : null,
+        filename: folder.name,
+      };
+
+      const result = await createSharedLink(params);
+      if (result.success && result.shareUrl) {
+        await navigator.clipboard.writeText(result.shareUrl);
+        showToast("Secure folder sharing link copied! (Expires in 24h)", "success");
+        queryClient.invalidateQueries({ queryKey: ["sharedLinks"] });
+      } else {
+        throw new Error("Failed to generate proxy share url");
+      }
+    } catch (err) {
+      showToast("Failed to generate proxy sharing link", "error");
+    }
+  };
+
   // Open Preview Modal
   const handleOpenPreview = async (asset: any) => {
     setPreviewTarget(asset);
@@ -3585,6 +3611,16 @@ function DrivePageContent() {
               >
                 <Info size={16} />
                 <span>Get Info</span>
+              </button>
+              <button 
+                onClick={() => {
+                  handleCopyFolderLink(contextMenu.item);
+                  setContextMenu(null);
+                }}
+                className="context-menu-item"
+              >
+                <LinkIcon size={16} />
+                <span>Copy Share Link</span>
               </button>
               {isAdmin && explorerMode !== "archive" && (
                 <button 
