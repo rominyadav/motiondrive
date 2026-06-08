@@ -2694,7 +2694,32 @@ function DrivePageContent() {
           </div>
 
           {/* VIEW RENDER: TABLE OR ICONS */}
-          {explorerMode === "links" ? (
+          {explorerMode !== "links" && contentsLoading ? (
+            <div style={{ 
+              display: "flex", 
+              flexDirection: "column",
+              alignItems: "center", 
+              justifyContent: "center", 
+              height: "280px", 
+              borderRadius: "16px",
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px dashed rgba(255, 255, 255, 0.1)",
+              backdropFilter: "blur(8px)",
+              gap: "16px",
+              marginTop: "12px"
+            }}>
+              <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Loader2 size={36} style={{ color: "var(--brand-accent)", animation: "spin-loader 1s linear infinite" }} />
+              </div>
+              <span style={{ fontSize: "14px", fontWeight: "500", color: "var(--text-secondary)", letterSpacing: "0.02em" }}>
+                {explorerMode === "personal" 
+                  ? "Querying personal drive from DB..." 
+                  : explorerMode === "shared" 
+                    ? "Directly listing Shared R2 S3..." 
+                    : "Directly listing Archive B2 S3..."}
+              </span>
+            </div>
+          ) : explorerMode === "links" ? (
             /* ========================================================
                SHARED LINKS MANAGER VIEW
                ======================================================== */
