@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef, Suspense } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "@/lib/auth-client";
 import { 
   createFolder, 
@@ -73,36 +74,96 @@ import {
 import Link from "next/link";
 import "./drive.css";
 
-export default function DrivePage() {
+function DrivePageContent() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Storage Quota State
-  const [storageStats, setStorageStats] = useState<{ used: number; limit: number; available: number } | null>(null);
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  const fetchStorageStats = async () => {
-    try {
-      const stats = await getUserStorageStats();
-      setStorageStats(stats);
-    } catch (err) {
-      console.error("Failed to fetch storage stats", err);
-    }
+  // Helper to change URL params
+  const setParams = (params: Record<string, string | null | undefined>) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === null || value === undefined) {
+        nextParams.delete(key);
+      } else {
+        nextParams.set(key, value);
+      }
+    });
+    router.push(`${pathname}?${nextParams.toString()}`);
   };
 
-  // Tri-Drive State
-  const [explorerMode, setExplorerMode] = useState<"personal" | "shared" | "archive">("personal");
-  const [sharedFolderPath, setSharedFolderPath] = useState<string[]>([]);
-  const [archiveFolderPath, setArchiveFolderPath] = useState<string[]>([]);
+  // Derived states from searchParams
+  const explorerMode = (searchParams.get("mode") as "personal" | "shared" | "archive") || "personal";
+  const selectedProjectId = searchParams.get("projectId");
+  const currentFolderId = searchParams.get("folderId");
+  const rawPath = searchParams.get("path") || "";
+  const sharedFolderPath = explorerMode === "shared" ? rawPath.split("/").filter(Boolean) : [];
+  const archiveFolderPath = explorerMode === "archive" ? rawPath.split("/").filter(Boolean) : [];
 
-  // Drive Navigation State
-  const [projects, setProjects] = useState<any[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folderPath, setFolderPath] = useState<{ id: string | null; name: string }[]>([]);
+  // FolderPath state (survives refreshes with sessionStorage)
+  const [folderPathState, setFolderPathState] = useState<{ id: string | null; name: string }[]>([]);
 
-  // Explorer Contents
-  const [folders, setFolders] = useState<any[]>([]);
-  const [assets, setAssets] = useState<any[]>([]);
+  useEffect(() => {
+    const cached = sessionStorage.getItem("motiondrive_folder_path");
+    if (cached) {
+      try {
+        setFolderPathState(JSON.parse(cached));
+      } catch (e) {
+        setFolderPathState([{ id: null, name: "My Drive" }]);
+      }
+    } else {
+      setFolderPathState([{ id: null, name: "My Drive" }]);
+    }
+  }, []);
+
+  const setFolderPath = (path: { id: string | null; name: string }[]) => {
+    setFolderPathState(path);
+    sessionStorage.setItem("motiondrive_folder_path", JSON.stringify(path));
+  };
+
+  const folderPath = folderPathState;
+
+  // TanStack Query for Projects
+  const { data: projects = [], refetch: refetchProjects } = useQuery({
+    queryKey: ["projects"],
+    queryFn: listProjects,
+    enabled: !!session,
+  });
+
+  // TanStack Query for Storage Stats
+  const { data: storageStats = null, refetch: fetchStorageStats } = useQuery({
+    queryKey: ["storageStats"],
+    queryFn: getUserStorageStats,
+    enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive",
+  });
+
+  // TanStack Query for Drive contents
+  const { data: driveData = { folders: [], assets: [] }, isLoading: contentsLoading } = useQuery({
+    queryKey: ["driveContents", explorerMode, selectedProjectId, currentFolderId, rawPath],
+    queryFn: async () => {
+      if (explorerMode === "shared") {
+        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
+        return await listSharedDriveContents(prefix);
+      } else if (explorerMode === "archive") {
+        const prefix = archiveFolderPath.length > 0 ? archiveFolderPath.join("/") + "/" : "";
+        return await listArchiveDriveContents(prefix);
+      } else {
+        return await listDriveContents({
+          projectId: selectedProjectId,
+          folderId: currentFolderId
+        });
+      }
+    },
+    enabled: !!session,
+  });
+
+  const folders = driveData.folders;
+  const assets = driveData.assets;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"table" | "icons">("table");
 
@@ -228,7 +289,6 @@ export default function DrivePage() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
 
   // Auto-close context menu on window clicks
   useEffect(() => {
@@ -443,14 +503,7 @@ export default function DrivePage() {
           await renameSharedFolder(oldPrefix, newPrefix);
           showToast(`Folder renamed to ${nameInput}`, "success");
         }
-
-        // Reload shared contents
-        const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-        const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
-        setFolders(loadedFolders);
-        setAssets(loadedAssets);
       } else {
-        // Personal Drive (Database Rename)
         if (type === "file") {
           await renameAsset(item.id, nameInput);
           showToast(`File renamed to ${nameInput}`, "success");
@@ -458,15 +511,8 @@ export default function DrivePage() {
           await renameFolder(item.id, nameInput);
           showToast(`Folder renamed to ${nameInput}`, "success");
         }
-
-        // Reload personal contents
-        const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
-          projectId: selectedProjectId,
-          folderId: currentFolderId
-        });
-        setFolders(loadedFolders);
-        setAssets(loadedAssets);
       }
+      await refreshExplorerContents();
     } catch (err) {
       showToast("Failed to rename target", "error");
       console.error(err);
@@ -499,53 +545,10 @@ export default function DrivePage() {
       }
 
       setSession(sessionData);
-      fetchStorageStats();
-
-      // Load initial Drive data
-      try {
-        const loadedProjects = await listProjects();
-        setProjects(loadedProjects);
-        setFolderPath([{ id: null, name: "My Drive" }]);
-      } catch (err) {
-        console.error("Failed to load projects", err);
-      } finally {
-        setLoading(false);
-      }
+      setLoading(false);
     }
     checkAuth();
   }, [router]);
-
-  // Load folder contents whenever workspace scope or active drive mode changes
-  useEffect(() => {
-    if (loading || !session) return;
-
-    async function loadContents() {
-      try {
-        if (explorerMode === "shared") {
-          const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-          const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
-          setFolders(loadedFolders);
-          setAssets(loadedAssets);
-        } else if (explorerMode === "archive") {
-          const prefix = archiveFolderPath.length > 0 ? archiveFolderPath.join("/") + "/" : "";
-          const { folders: loadedFolders, assets: loadedAssets } = await listArchiveDriveContents(prefix);
-          setFolders(loadedFolders);
-          setAssets(loadedAssets);
-        } else {
-          const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
-            projectId: selectedProjectId,
-            folderId: currentFolderId
-          });
-          setFolders(loadedFolders);
-          setAssets(loadedAssets);
-          fetchStorageStats();
-        }
-      } catch (err) {
-        console.error("Failed to load drive contents", err);
-      }
-    }
-    loadContents();
-  }, [selectedProjectId, currentFolderId, explorerMode, sharedFolderPath, archiveFolderPath, loading, session]);
 
   const handleSignOut = async () => {
     await authClient.signOut();
@@ -561,24 +564,12 @@ export default function DrivePage() {
       if (explorerMode === "shared") {
         const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
         await createSharedFolder(prefix, newFolderName.trim());
-        setNewFolderName("");
-        setFolderModalOpen(false);
-
-        // Reload folders
-        const { folders: loadedFolders } = await listSharedDriveContents(prefix);
-        setFolders(loadedFolders);
       } else {
         await createFolder(newFolderName.trim(), selectedProjectId || undefined, currentFolderId);
-        setNewFolderName("");
-        setFolderModalOpen(false);
-
-        // Reload folders
-        const { folders: loadedFolders } = await listDriveContents({
-          projectId: selectedProjectId,
-          folderId: currentFolderId
-        });
-        setFolders(loadedFolders);
       }
+      setNewFolderName("");
+      setFolderModalOpen(false);
+      await refreshExplorerContents();
       showToast("Folder created successfully!", "success");
     } catch (err) {
       showToast("Failed to create folder", "error");
@@ -595,9 +586,7 @@ export default function DrivePage() {
       setNewProjectClient("");
       setProjectModalOpen(false);
 
-      // Reload projects list
-      const loadedProjects = await listProjects();
-      setProjects(loadedProjects);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       showToast("Project created successfully!", "success");
     } catch (err) {
       showToast("Failed to create project", "error");
@@ -615,9 +604,7 @@ export default function DrivePage() {
       setEditProjectName("");
       setEditProjectClient("");
 
-      // Reload projects list
-      const loadedProjects = await listProjects();
-      setProjects(loadedProjects);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       showToast("Project renamed successfully!", "success");
     } catch (err) {
       showToast("Failed to rename project", "error");
@@ -637,9 +624,7 @@ export default function DrivePage() {
       }
       setSelectedProjectToDelete(null);
 
-      // Reload projects list
-      const loadedProjects = await listProjects();
-      setProjects(loadedProjects);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       showToast("Project deleted successfully!", "success");
     } catch (err) {
       showToast("Failed to delete project", "error");
@@ -650,22 +635,21 @@ export default function DrivePage() {
   const navigateToFolder = (folder: { id: string; name: string; isR2Physical?: boolean }) => {
     if (folder.isR2Physical) {
       const parts = folder.id.split("/").filter(Boolean);
-      if (explorerMode === "archive") {
-        setArchiveFolderPath(parts);
-      } else {
-        setSharedFolderPath(parts);
-      }
+      setParams({ path: parts.join("/") });
     } else {
-      setCurrentFolderId(folder.id);
-      setFolderPath((prev) => [...prev, { id: folder.id, name: folder.name }]);
+      setParams({ folderId: folder.id });
+      setFolderPath([...folderPath, { id: folder.id, name: folder.name }]);
     }
   };
 
   // Click on Project (forces Personal mode)
   const selectProject = (projectId: string | null, projectName: string) => {
-    setExplorerMode("personal");
-    setSelectedProjectId(projectId);
-    setCurrentFolderId(null);
+    setParams({
+      mode: "personal",
+      projectId: projectId,
+      folderId: null,
+      path: null,
+    });
     if (projectId === null) {
       setFolderPath([{ id: null, name: "My Drive" }]);
     } else {
@@ -678,44 +662,54 @@ export default function DrivePage() {
 
   // Switch to Shared Drive mode
   const selectSharedDrive = () => {
-    setExplorerMode("shared");
-    setSharedFolderPath([]);
-    setSelectedProjectId(null);
-    setCurrentFolderId(null);
+    setParams({
+      mode: "shared",
+      projectId: null,
+      folderId: null,
+      path: null,
+    });
   };
 
   // Click Breadcrumb
   const handleBreadcrumbClick = (index: number) => {
     const item = folderPath[index];
     if (index === 0) {
-      setSelectedProjectId(null);
-      setCurrentFolderId(null);
+      setParams({
+        projectId: null,
+        folderId: null,
+      });
       setFolderPath([{ id: null, name: "My Drive" }]);
     } else if (item.id && item.id.startsWith("project-")) {
       const pId = item.id.replace("project-", "");
-      setSelectedProjectId(pId);
-      setCurrentFolderId(null);
+      setParams({
+        projectId: pId,
+        folderId: null,
+      });
       setFolderPath(folderPath.slice(0, index + 1));
     } else {
-      setCurrentFolderId(item.id);
+      setParams({
+        folderId: item.id,
+      });
       setFolderPath(folderPath.slice(0, index + 1));
     }
   };
 
   const handleBreadcrumbClickShared = (path: string[]) => {
-    setSharedFolderPath(path);
+    setParams({ path: path.join("/") || null });
   };
 
   // Switch to Archive Drive mode
   const selectArchiveDrive = () => {
-    setExplorerMode("archive");
-    setArchiveFolderPath([]);
-    setSelectedProjectId(null);
-    setCurrentFolderId(null);
+    setParams({
+      mode: "archive",
+      projectId: null,
+      folderId: null,
+      path: null,
+    });
   };
 
   const handleBreadcrumbClickArchive = (path: string[]) => {
-    setArchiveFolderPath(path);
+    setParams({ path: path.join("/") || null });
   };
 
   // Download File via Presigned URL
@@ -754,18 +748,10 @@ export default function DrivePage() {
         try {
           if (explorerMode === "shared") {
             await deleteSharedAsset(assetId);
-            const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-            const { assets: loadedAssets } = await listSharedDriveContents(prefix);
-            setAssets(loadedAssets);
           } else {
             await deleteAsset(assetId);
-            // Reload assets
-            const { assets: loadedAssets } = await listDriveContents({
-              projectId: selectedProjectId,
-              folderId: currentFolderId
-            });
-            setAssets(loadedAssets);
           }
+          await refreshExplorerContents();
           showToast("File deleted successfully!", "success");
         } catch (err) {
           showToast("Failed to delete file", "error");
@@ -787,20 +773,10 @@ export default function DrivePage() {
         try {
           if (explorerMode === "shared") {
             await deleteSharedFolder(folderId);
-            const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-            const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
-            setFolders(loadedFolders);
-            setAssets(loadedAssets);
           } else {
             await deleteFolder(folderId);
-            // Reload drive contents
-            const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
-              projectId: selectedProjectId,
-              folderId: currentFolderId
-            });
-            setFolders(loadedFolders);
-            setAssets(loadedAssets);
           }
+          await refreshExplorerContents();
           showToast("Folder deleted successfully!", "success");
         } catch (err) {
           showToast("Failed to delete folder", "error");
@@ -1136,27 +1112,8 @@ export default function DrivePage() {
   // ==========================================
 
   const refreshExplorerContents = async () => {
-    const isShared = explorerMode === "shared";
-    const isArchive = explorerMode === "archive";
-    if (isShared) {
-      const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
-      const { folders: loadedFolders, assets: loadedAssets } = await listSharedDriveContents(prefix);
-      setFolders(loadedFolders);
-      setAssets(loadedAssets);
-    } else if (isArchive) {
-      const prefix = archiveFolderPath.length > 0 ? archiveFolderPath.join("/") + "/" : "";
-      const { folders: loadedFolders, assets: loadedAssets } = await listArchiveDriveContents(prefix);
-      setFolders(loadedFolders);
-      setAssets(loadedAssets);
-    } else {
-      const { folders: loadedFolders, assets: loadedAssets } = await listDriveContents({
-        projectId: selectedProjectId,
-        folderId: currentFolderId
-      });
-      setFolders(loadedFolders);
-      setAssets(loadedAssets);
-      fetchStorageStats();
-    }
+    await queryClient.invalidateQueries({ queryKey: ["driveContents"] });
+    await queryClient.invalidateQueries({ queryKey: ["storageStats"] });
   };
 
   const uploadSingleFile = async (
@@ -1401,7 +1358,7 @@ export default function DrivePage() {
               activeParentId = localFolderCache[pathKey];
             } else {
               const existing = folders.find(
-                (f) => f.name === folderName && f.parentId === activeParentId
+                (f: any) => f.name === folderName && f.parentId === activeParentId
               );
 
               if (existing) {
@@ -3528,5 +3485,17 @@ export default function DrivePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DrivePage() {
+  return (
+    <Suspense fallback={
+      <div style={{ display: "flex", height: "100vh", width: "100vw", alignItems: "center", justifyContent: "center", background: "var(--bg-main)", color: "var(--text-main)" }}>
+        <Loader2 size={32} style={{ animation: "spin 1s linear infinite", color: "var(--accent-primary)" }} />
+      </div>
+    }>
+      <DrivePageContent />
+    </Suspense>
   );
 }
