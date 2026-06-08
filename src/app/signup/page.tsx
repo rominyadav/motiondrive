@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
-import { validateInviteToken, claimInviteToken } from "@/app/actions/auth";
+import { validateInviteToken, claimInviteToken, verifyEmailOTP } from "@/app/actions/auth";
 import Link from "next/link";
 import "../drive.css";
 
@@ -17,6 +17,11 @@ function SignupForm() {
   const [invitationInfo, setInvitationInfo] = useState<{ email: string; role: string } | null>(null);
   const [checkingToken, setCheckingToken] = useState(false);
   const [isVerificationSent, setIsVerificationSent] = useState(false);
+  
+  const [otp, setOtp] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState("");
+  const [otpSuccess, setOtpSuccess] = useState(false);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -106,23 +111,92 @@ function SignupForm() {
     );
   }
 
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otp.length !== 6) {
+      setOtpError("OTP must be exactly 6 digits.");
+      return;
+    }
+    setOtpError("");
+    setOtpLoading(true);
+    try {
+      const res = await verifyEmailOTP(email, otp);
+      if (res.success) {
+        setOtpSuccess(true);
+      } else {
+        setOtpError(res.error || "Verification failed");
+      }
+    } catch (err) {
+      setOtpError("Failed to verify OTP. Please try again.");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   if (isVerificationSent) {
     return (
       <div className="auth-wrapper">
-        <div className="auth-card animate-fade-in" style={{ textAlign: "center", padding: "40px 24px" }}>
-          <div className="user-avatar" style={{ margin: "0 auto 24px auto", width: "56px", height: "56px", background: "rgba(99, 102, 241, 0.2)", color: "var(--accent-indigo)" }}>
-            ✓
-          </div>
-          <h2 style={{ fontSize: "22px", fontWeight: "700", marginBottom: "12px" }}>Verify Your Email</h2>
-          <p style={{ color: "var(--text-secondary)", fontSize: "15px", lineHeight: "1.6", marginBottom: "24px" }}>
-            We've sent a verification link to <strong style={{ color: "#ffffff" }}>{email}</strong>.<br />
-            Please click the link in your email to verify your account and start using Motionsewa Drive.
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            <Link href="/login" className="btn-primary" style={{ textDecoration: "none", display: "inline-block" }}>
-              Proceed to Sign In
-            </Link>
-          </div>
+        <div className="auth-card animate-fade-in" style={{ textAlign: "center", padding: "32px 24px" }}>
+          {otpSuccess ? (
+            <>
+              <div className="user-avatar" style={{ margin: "0 auto 24px auto", width: "56px", height: "56px", background: "rgba(16, 185, 129, 0.2)", color: "var(--accent-success)" }}>
+                ✓
+              </div>
+              <h2 style={{ fontSize: "22px", fontWeight: "700", marginBottom: "12px" }}>Email Verified Successfully!</h2>
+              <p style={{ color: "var(--text-secondary)", fontSize: "15px", lineHeight: "1.6", marginBottom: "28px" }}>
+                Your email address has been verified. You can now log in to access your organization's Drive.
+              </p>
+              <Link href="/login" className="btn-primary" style={{ textDecoration: "none", display: "inline-block", width: "100%" }}>
+                Proceed to Sign In
+              </Link>
+            </>
+          ) : (
+            <>
+              <div className="user-avatar" style={{ margin: "0 auto 20px auto", width: "56px", height: "56px", background: "rgba(99, 102, 241, 0.2)", color: "var(--accent-indigo)" }}>
+                ✉
+              </div>
+              <h2 style={{ fontSize: "22px", fontWeight: "700", marginBottom: "12px" }}>Verify Your Email</h2>
+              <p style={{ color: "var(--text-secondary)", fontSize: "14px", lineHeight: "1.5", marginBottom: "20px" }}>
+                We sent a verification link and a 6-digit OTP code to <strong style={{ color: "#ffffff" }}>{email}</strong>.
+              </p>
+
+              <form onSubmit={handleVerifyOtp} style={{ marginBottom: "24px" }}>
+                <div className="form-group" style={{ textAlign: "left" }}>
+                  <label className="form-label" style={{ textAlign: "center", display: "block" }}>Enter 6-Digit OTP Code</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    required
+                    placeholder="e.g. 123456"
+                    style={{ textAlign: "center", fontSize: "20px", letterSpacing: "8px", fontWeight: "700" }}
+                    maxLength={6}
+                    disabled={otpLoading}
+                  />
+                </div>
+
+                {otpError && (
+                  <div style={{ color: "var(--accent-danger)", fontSize: "14px", marginBottom: "12px" }}>
+                    {otpError}
+                  </div>
+                )}
+
+                <button type="submit" className="btn-primary" style={{ width: "100%" }} disabled={otpLoading}>
+                  {otpLoading ? "Verifying..." : "Verify OTP Code"}
+                </button>
+              </form>
+
+              <div style={{ borderTop: "1px solid var(--border-color)", paddingTop: "20px" }}>
+                <p style={{ color: "var(--text-secondary)", fontSize: "13px", marginBottom: "16px" }}>
+                  Or simply click the verification button inside the email we sent you.
+                </p>
+                <Link href="/login" style={{ color: "var(--accent-indigo)", fontSize: "14px", fontWeight: "600", textDecoration: "none" }}>
+                  Back to Sign In
+                </Link>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
