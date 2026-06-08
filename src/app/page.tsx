@@ -734,8 +734,11 @@ function DrivePageContent() {
   };
 
   // Delete File
+  // Delete File
   const handleDeleteFile = async (assetId: string) => {
     const targetBucketText = explorerMode === "shared" ? "shared Cloudflare R2 bucket (video-assets)" : "Web Drive and Cloudflare R2";
+    const fileObj = driveData?.assets?.find((a: any) => a.id === assetId);
+    const resolvedFilename = fileObj?.filename || "File";
     
     setConfirmModal({
       open: true,
@@ -745,42 +748,93 @@ function DrivePageContent() {
       confirmText: "Delete Permanently",
       confirmColor: "var(--accent-danger)",
       onConfirm: async () => {
-        try {
-          if (explorerMode === "shared") {
-            await deleteSharedAsset(assetId);
-          } else {
-            await deleteAsset(assetId);
+        const taskLabel = `Deleting ${resolvedFilename}`;
+        
+        // Show operation as in-progress in progress drawer
+        setUploadActive(true);
+        setUploadMinimized(false);
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 0
+        }));
+
+        // Fire and forget asynchronously
+        (async () => {
+          try {
+            if (explorerMode === "shared") {
+              await deleteSharedAsset(assetId);
+            } else {
+              await deleteAsset(assetId);
+            }
+            
+            // Mark completed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: 100
+            }));
+            await refreshExplorerContents();
+            showToast("File deleted successfully!", "success");
+          } catch (err) {
+            // Mark failed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: -2
+            }));
+            showToast("Failed to delete file", "error");
           }
-          await refreshExplorerContents();
-          showToast("File deleted successfully!", "success");
-        } catch (err) {
-          showToast("Failed to delete file", "error");
-        }
+        })();
       }
     });
   };
 
   // Delete Folder
-  const handleDeleteFolder = async (folderId: string, folderName: string) => {
+  const handleDeleteFolder = async (folderId: string, folderName?: string) => {
+    const folderObj = driveData?.folders?.find((f: any) => f.id === folderId);
+    const resolvedFolderName = folderName || folderObj?.name || "Folder";
+
     setConfirmModal({
       open: true,
       title: "Delete Folder?",
-      message: `Are you sure you want to delete folder "${folderName}"?`,
+      message: `Are you sure you want to delete folder "${resolvedFolderName}"?`,
       warning: "All nested files and subfolders will be permanently deleted from the Web Drive and Cloudflare R2.",
       confirmText: "Delete Folder Permanently",
       confirmColor: "var(--accent-danger)",
       onConfirm: async () => {
-        try {
-          if (explorerMode === "shared") {
-            await deleteSharedFolder(folderId);
-          } else {
-            await deleteFolder(folderId);
+        const taskLabel = `Deleting folder "${resolvedFolderName}"`;
+        
+        // Show operation as in-progress in progress drawer
+        setUploadActive(true);
+        setUploadMinimized(false);
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 0
+        }));
+
+        // Fire and forget asynchronously
+        (async () => {
+          try {
+            if (explorerMode === "shared") {
+              await deleteSharedFolder(folderId);
+            } else {
+              await deleteFolder(folderId);
+            }
+            
+            // Mark completed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: 100
+            }));
+            await refreshExplorerContents();
+            showToast("Folder deleted successfully!", "success");
+          } catch (err) {
+            // Mark failed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: -2
+            }));
+            showToast("Failed to delete folder", "error");
           }
-          await refreshExplorerContents();
-          showToast("Folder deleted successfully!", "success");
-        } catch (err) {
-          showToast("Failed to delete folder", "error");
-        }
+        })();
       }
     });
   };
@@ -871,24 +925,48 @@ function DrivePageContent() {
       confirmText: `Delete ${totalCount} Item(s)`,
       confirmColor: "var(--accent-danger)",
       onConfirm: async () => {
-        setLoading(true);
-        try {
-          const isShared = explorerMode === "shared";
-          await bulkDeleteItems({
-            assetIds: Array.from(selectedAssetIds),
-            folderIds: Array.from(selectedFolderIds),
-            isSharedDrive: isShared
-          });
+        const taskLabel = `Deleting ${totalCount} selected item(s)`;
+        const assetIdsToDelete = Array.from(selectedAssetIds);
+        const folderIdsToDelete = Array.from(selectedFolderIds);
+        const isShared = explorerMode === "shared";
 
-          handleClearSelection();
-          await refreshExplorerContents();
-          showToast("Selected items deleted successfully!", "success");
-        } catch (err) {
-          console.error("Bulk delete failed", err);
-          showToast("Failed to delete selected items", "error");
-        } finally {
-          setLoading(false);
-        }
+        // Show operation as in-progress in progress drawer
+        setUploadActive(true);
+        setUploadMinimized(false);
+        setUploadProgress(prev => ({
+          ...prev,
+          [taskLabel]: 0
+        }));
+
+        // Clear selection immediately so user can continue using the drive
+        handleClearSelection();
+
+        // Run asynchronously in background without blocking UI
+        (async () => {
+          try {
+            await bulkDeleteItems({
+              assetIds: assetIdsToDelete,
+              folderIds: folderIdsToDelete,
+              isSharedDrive: isShared
+            });
+
+            // Mark completed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: 100
+            }));
+            await refreshExplorerContents();
+            showToast("Selected items deleted successfully!", "success");
+          } catch (err) {
+            console.error("Bulk delete failed", err);
+            // Mark failed in drawer
+            setUploadProgress(prev => ({
+              ...prev,
+              [taskLabel]: -2
+            }));
+            showToast("Failed to delete selected items", "error");
+          }
+        })();
       }
     });
   };
@@ -1656,9 +1734,93 @@ function DrivePageContent() {
 
   if (loading) {
     return (
-      <div className="app-container" style={{ alignItems: "center", justifyContent: "center" }}>
-        <Loader2 className="animate-spin brand-accent" size={42} />
-        <h3 style={{ marginLeft: "16px" }}>Opening your Web Drive...</h3>
+      <div className="app-container" style={{ 
+        alignItems: "center", 
+        justifyContent: "center",
+        position: "relative",
+        background: "radial-gradient(circle at center, rgba(99, 102, 241, 0.08) 0%, var(--bg-primary) 70%)",
+        flexDirection: "column"
+      }}>
+        {/* Glowing background circle for visual depth */}
+        <div style={{
+          position: "absolute",
+          width: "300px",
+          height: "300px",
+          background: "radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 70%)",
+          filter: "blur(50px)",
+          top: "calc(50% - 150px)",
+          left: "calc(50% - 150px)",
+          animation: "pulse-glow 3s infinite ease-in-out",
+          pointerEvents: "none"
+        }} />
+
+        <div className="glass animate-fade-in" style={{
+          padding: "48px",
+          borderRadius: "24px",
+          border: "1px solid var(--border-color)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          boxShadow: "var(--shadow-lg), 0 0 50px rgba(99, 102, 241, 0.08)",
+          maxWidth: "420px",
+          textAlign: "center",
+          zIndex: 10
+        }}>
+          {/* Circular progress loader container */}
+          <div style={{ position: "relative", width: "72px", height: "72px", marginBottom: "28px" }}>
+            {/* outer track */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid rgba(255, 255, 255, 0.03)"
+            }} />
+            {/* inner spinning glowing arc */}
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "50%",
+              border: "3px solid transparent",
+              borderTopColor: "var(--accent-indigo)",
+              borderRightColor: "var(--accent-blue)",
+              animation: "spin 1.2s infinite cubic-bezier(0.4, 0.1, 0.6, 1)",
+              boxShadow: "0 0 15px rgba(99, 102, 241, 0.25)"
+            }} />
+            {/* Center glowing dot */}
+            <div style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+              width: "12px",
+              height: "12px",
+              borderRadius: "50%",
+              backgroundColor: "var(--accent-indigo)",
+              boxShadow: "0 0 12px var(--accent-indigo)"
+            }} />
+          </div>
+
+          <h2 style={{ 
+            fontSize: "22px", 
+            fontWeight: "800", 
+            letterSpacing: "-0.5px", 
+            marginBottom: "8px",
+            background: "linear-gradient(135deg, var(--text-primary), var(--text-secondary))",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent"
+          }}>
+            Motionsewa Drive
+          </h2>
+          <p style={{ 
+            fontSize: "14px", 
+            color: "var(--text-secondary)",
+            animation: "pulse-glow 2s infinite ease-in-out",
+            fontWeight: "500",
+            letterSpacing: "0.2px"
+          }}>
+            Opening your Web Drive...
+          </p>
+        </div>
       </div>
     );
   }
@@ -2385,7 +2547,7 @@ function DrivePageContent() {
         <div className="progress-drawer">
           <div className="drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <span className="drawer-title" style={{ fontWeight: '600' }}>
-              {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying"))
+              {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"))
                 ? "File Operations & Uploads"
                 : "Uploading Video Chunk(s)"}
             </span>
@@ -2419,7 +2581,7 @@ function DrivePageContent() {
               const isCompleted = progress === 100;
               const isCancelled = progress === -1;
               const isFailed = progress === -2;
-              const isBackgroundOp = filename.startsWith("Moving") || filename.startsWith("Copying");
+              const isBackgroundOp = filename.startsWith("Moving") || filename.startsWith("Copying") || filename.startsWith("Deleting");
 
               return (
                 <div key={filename} className="upload-item">
@@ -2502,14 +2664,14 @@ function DrivePageContent() {
             <span className="minimized-pill-text">
               {(() => {
                 const activeProgresses = Object.entries(uploadProgress).filter(([_, p]) => p >= 0 && p < 100);
-                const hasActiveOps = activeProgresses.some(([k]) => k.startsWith("Moving") || k.startsWith("Copying"));
-                const hasActiveUploads = activeProgresses.some(([k]) => !k.startsWith("Moving") && !k.startsWith("Copying"));
+                const hasActiveOps = activeProgresses.some(([k]) => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"));
+                const hasActiveUploads = activeProgresses.some(([k]) => !k.startsWith("Moving") && !k.startsWith("Copying") && !k.startsWith("Deleting"));
 
                 if (activeProgresses.length > 0) {
                   if (hasActiveUploads && hasActiveOps) {
                     return "Uploading & transferring items...";
                   } else if (hasActiveOps) {
-                    const opCount = activeProgresses.filter(([k]) => k.startsWith("Moving") || k.startsWith("Copying")).length;
+                    const opCount = activeProgresses.filter(([k]) => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting")).length;
                     return `${opCount} file operation${opCount > 1 ? 's' : ''} in progress`;
                   } else {
                     const uploadCount = activeProgresses.length;
