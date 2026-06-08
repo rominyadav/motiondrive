@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { inviteUser, listUsers, listInvitations, updateUserStatus } from "@/app/actions/admin";
+import { inviteUser, listUsers, listInvitations, updateUserStatus, updateUserStorageLimit } from "@/app/actions/admin";
 import { Users, Mail, ShieldAlert, ArrowLeft, LogOut, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import Link from "next/link";
 import "../drive.css";
@@ -154,15 +154,16 @@ export default function AdminPage() {
               </h2>
 
               <div className="files-container" style={{ marginTop: "16px" }}>
-                <div className="table-header" style={{ gridTemplateColumns: "1.5fr 1fr 1fr 1.2fr" }}>
+                <div className="table-header" style={{ gridTemplateColumns: "1.2fr 0.8fr 0.8fr 1.2fr 1fr" }}>
                   <div>Name & Email</div>
                   <div>Role</div>
                   <div>Status</div>
+                  <div>Storage Limit</div>
                   <div style={{ textAlign: "right" }}>Actions</div>
                 </div>
 
                 {users.map((u) => (
-                  <div className="file-row" key={u.id} style={{ gridTemplateColumns: "1.5fr 1fr 1fr 1.2fr" }}>
+                  <div className="file-row" key={u.id} style={{ gridTemplateColumns: "1.2fr 0.8fr 0.8fr 1.2fr 1fr" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
                       <span className="file-name" style={{ fontSize: "14px" }}>{u.name}</span>
                       <span style={{ fontSize: "12px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</span>
@@ -178,6 +179,28 @@ export default function AdminPage() {
                       <span className={`badge ${u.status}`}>
                         {u.status}
                       </span>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <input
+                        type="number"
+                        className="form-input"
+                        style={{ height: "30px", width: "70px", padding: "0 6px", fontSize: "12px", textAlign: "center" }}
+                        defaultValue={((u.storageLimit || 107374182400) / (1024 * 1024 * 1024)).toFixed(0)}
+                        onBlur={async (e) => {
+                          const val = parseInt(e.target.value);
+                          if (isNaN(val) || val <= 0) return;
+                          const bytes = val * 1024 * 1024 * 1024;
+                          if (bytes === (u.storageLimit || 107374182400)) return;
+                          try {
+                            await updateUserStorageLimit(u.id, bytes);
+                            showToast(`Updated storage limit for ${u.name} to ${val} GB!`, "success");
+                          } catch (err) {
+                            showToast("Failed to update storage limit", "error");
+                          }
+                        }}
+                      />
+                      <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>GB</span>
                     </div>
 
                     <div className="file-actions" style={{ justifyContent: "flex-end", gap: "8px" }}>

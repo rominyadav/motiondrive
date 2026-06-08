@@ -20,6 +20,11 @@ export const auth = betterAuth({
         required: false,
         defaultValue: "pending",
       },
+      storageLimit: {
+        type: "number",
+        required: false,
+        defaultValue: 107374182400,
+      },
     },
   },
   emailAndPassword: {

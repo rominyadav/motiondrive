@@ -16,7 +16,7 @@ import {
   HeadObjectCommand
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { eq, and, or, isNull, desc, inArray } from "drizzle-orm";
+import { eq, and, or, isNull, desc, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 // ==========================================
@@ -166,7 +166,6 @@ export async function initiateMultipartUpload(params: {
 }) {
   const session = await requireApprovedUser();
   const userId = session.user.id;
-
   const sanitizedFilename = params.filename.replace(/[^a-zA-Z0-9.-]/g, "_");
   
   // Decide Bucket & Key structure
@@ -174,6 +173,36 @@ export async function initiateMultipartUpload(params: {
   const r2Key = params.existingR2Key || (params.isSharedDrive 
     ? `${params.prefix || ""}${sanitizedFilename}`
     : `video-archive/${crypto.randomUUID()}-${sanitizedFilename}`);
+
+  // Enforce storage limit check on personal "My Drive" uploads
+  if (!params.isSharedDrive) {
+    const [userRecord] = await db
+      .select({ storageLimit: user.storageLimit })
+      .from(user)
+      .where(eq(user.id, userId));
+
+    const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
+
+    const [sizeQuery] = await db
+      .select({ totalSize: sql<number>`COALESCE(SUM(${assets.size}), 0)` })
+      .from(assets)
+      .where(
+        and(
+          eq(assets.uploadedBy, userId),
+          eq(assets.status, "completed")
+        )
+      );
+
+    const currentUsed = sizeQuery?.totalSize ?? 0;
+    if (currentUsed + params.size > limit) {
+      const limitGb = (limit / (1024 * 1024 * 1024)).toFixed(1);
+      const usedGb = (currentUsed / (1024 * 1024 * 1024)).toFixed(1);
+      const fileGb = (params.size / (1024 * 1024 * 1024)).toFixed(2);
+      throw new Error(
+        `Storage limit exceeded. You have used ${usedGb} GB of your ${limitGb} GB limit. This file is ${fileGb} GB. Please contact an administrator to request more space.`
+      );
+    }
+  }
 
   // Initiate multipart with R2
   const command = new CreateMultipartUploadCommand({
@@ -1252,4 +1281,37 @@ export async function bulkCopyItems(params: {
   }
 
   return { success: true };
+}
+
+/**
+ * Calculates current used space, total allowed limit, and remaining bytes for personal drive
+ */
+export async function getUserStorageStats() {
+  const session = await requireApprovedUser();
+  const userId = session.user.id;
+
+  const [userRecord] = await db
+    .select({ storageLimit: user.storageLimit })
+    .from(user)
+    .where(eq(user.id, userId));
+
+  const limit = userRecord?.storageLimit ?? 107374182400; // 100 GB default
+
+  const [sizeQuery] = await db
+    .select({ totalSize: sql<number>`COALESCE(SUM(${assets.size}), 0)` })
+    .from(assets)
+    .where(
+      and(
+        eq(assets.uploadedBy, userId),
+        eq(assets.status, "completed")
+      )
+    );
+
+  const used = sizeQuery?.totalSize ?? 0;
+
+  return {
+    used,
+    limit,
+    available: Math.max(0, limit - used),
+  };
 }

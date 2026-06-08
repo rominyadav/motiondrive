@@ -114,3 +114,17 @@ export async function listInvitations() {
     .from(invitations)
     .orderBy(desc(invitations.createdAt));
 }
+
+/**
+ * Updates a user's personal storage limit (Admin-only).
+ */
+export async function updateUserStorageLimit(userId: string, limitBytes: number) {
+  await requireAdmin();
+
+  await db
+    .update(user)
+    .set({ storageLimit: limitBytes })
+    .where(eq(user.id, userId));
+
+  return { success: true };
+}
