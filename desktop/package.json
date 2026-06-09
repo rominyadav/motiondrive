@@ -5,7 +5,7 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "node build-splash.js && tauri dev",
-    "build": "node build-splash.js && tauri build"
+    "build": "node build-splash.js --prod && tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0"
