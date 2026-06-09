@@ -1,0 +1,28 @@
+[package]
+name = "motionsewa-drive-desktop"
+version = "1.0.0"
+description = "High Performance Desktop Client for Motionsewa Drive"
+authors = ["Motionsewa"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+percent-encoding = "2.3"
+tauri-plugin-dialog = "2.0.0"
+
+[profile.release]
+panic = "abort" # Strip expensive panic backtraces
+codegen-units = 1 # Maximize optimizations
+lto = true # Link-Time Optimization
+opt-level = "s" # Optimize for size (or "3" for speed, "s" is usually standard for Tauri)
+strip = true # Strip symbols and debug info

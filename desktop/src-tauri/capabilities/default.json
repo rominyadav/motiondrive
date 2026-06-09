@@ -1,0 +1,33 @@
+{
+  "$schema": "../gen/schemas/capability.json",
+  "identifier": "default",
+  "description": "Default capability for Motionsewa Drive Webview",
+  "windows": [
+    "*"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:3000",
+      "https://drive.motionsewa.com",
+      "https://*.motionsewa.com",
+      "https://motiondrive.vercel.app"
+    ]
+  },
+  "permissions": [
+    "core:path:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
+    "core:window:default",
+    "core:window:allow-create",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-get-all-windows",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-get-all-webviews",
+    "core:app:default",
+    "dialog:default",
+    "dialog:allow-open"
+  ]
+}
