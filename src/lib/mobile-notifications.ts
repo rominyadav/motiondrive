@@ -74,6 +74,17 @@ export async function updateTransferNotification(params: {
   bytesTransferred: number;
   totalBytes: number;
 }) {
+  // Bypass local notifications on Capacitor to prevent native bridge flooding and deadlocks during active transfers
+  if (isCapacitor()) {
+    const percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
+    return {
+      speed: 0,
+      speedText: "",
+      etaText: "",
+      percent,
+    };
+  }
+
   const plugin = await getNotificationsPlugin();
   if (!plugin) return;
 
