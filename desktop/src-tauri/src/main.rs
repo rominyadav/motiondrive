@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::{OnceLock, Mutex};
 use std::collections::HashSet;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::Semaphore;
 use serde::{Serialize, Deserialize};
 use tauri::{AppHandle, Emitter};
@@ -19,6 +19,19 @@ fn canceled_uploads() -> &'static Mutex<HashSet<String>> {
 fn cancel_upload(file_path: String) {
     println!("[Native Uploader] Registering cancel command for path: {}", file_path);
     if let Ok(mut canceled) = canceled_uploads().lock() {
+        canceled.insert(file_path);
+    }
+}
+
+fn canceled_downloads() -> &'static Mutex<HashSet<String>> {
+    static CANCELED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    CANCELED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[tauri::command]
+fn cancel_download(file_path: String) {
+    println!("[Native Downloader] Registering cancel command for path: {}", file_path);
+    if let Ok(mut canceled) = canceled_downloads().lock() {
         canceled.insert(file_path);
     }
 }
@@ -234,10 +247,113 @@ async fn upload_file_native(
     Ok(final_parts)
 }
 
+#[derive(Clone, Serialize)]
+struct DownloadProgressPayload {
+    #[serde(rename = "bytesDownloaded")]
+    bytes_downloaded: u64,
+    #[serde(rename = "totalBytes")]
+    total_bytes: u64,
+    #[serde(rename = "filePath")]
+    file_path: String,
+}
+
+#[tauri::command]
+async fn download_file_native(
+    app: AppHandle,
+    url: String,
+    file_path: String,
+) -> Result<(), String> {
+    println!("[Native Downloader] Starting download from {} to {}", url, file_path);
+
+    // Reset cancellation status
+    if let Ok(mut canceled) = canceled_downloads().lock() {
+        canceled.remove(&file_path);
+    }
+
+    // Build optimized HTTP client
+    let client = reqwest::Client::builder()
+        .tcp_keepalive(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to send GET request: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server returned error status: {}", response.status()));
+    }
+
+    let total_bytes = response
+        .content_length()
+        .unwrap_or(0);
+
+    // Create target file
+    let mut file = tokio::fs::File::create(&file_path)
+        .await
+        .map_err(|e| format!("Failed to create destination file: {}", e))?;
+
+    let mut bytes_downloaded = 0u64;
+    let mut stream = response.bytes_stream();
+    use futures_util::StreamExt; // Required for next() on bytes_stream
+
+    let mut last_emit_time = std::time::Instant::now();
+    let throttle_duration = std::time::Duration::from_millis(150);
+
+    while let Some(chunk_result) = stream.next().await {
+        // Check cancellation
+        if canceled_downloads().lock().map(|c| c.contains(&file_path)).unwrap_or(false) {
+            // Clean up file if canceled
+            drop(file);
+            let _ = tokio::fs::remove_file(&file_path).await;
+            return Err("Download canceled by user".to_string());
+        }
+
+        let chunk = chunk_result.map_err(|e| format!("Error while downloading stream: {}", e))?;
+        let chunk_len = chunk.len() as u64;
+
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write chunk to file: {}", e))?;
+
+        bytes_downloaded += chunk_len;
+
+        // Throttle progress updates to avoid flooding JS thread pool
+        let now = std::time::Instant::now();
+        if now.duration_since(last_emit_time) >= throttle_duration || bytes_downloaded == total_bytes {
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgressPayload {
+                    bytes_downloaded,
+                    total_bytes,
+                    file_path: file_path.clone(),
+                },
+            );
+            last_emit_time = now;
+        }
+    }
+
+    // Flush file buffers to disk
+    file.flush()
+        .await
+        .map_err(|e| format!("Failed to flush file buffers: {}", e))?;
+
+    println!("[Native Downloader] Download completed successfully for path: {}", file_path);
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![upload_file_native, get_file_metadata, cancel_upload])
+        .invoke_handler(tauri::generate_handler![
+            upload_file_native,
+            get_file_metadata,
+            cancel_upload,
+            download_file_native,
+            cancel_download
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

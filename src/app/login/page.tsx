@@ -4,6 +4,7 @@ import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import "../drive.css";
 
 export default function LoginPage() {
@@ -159,7 +160,7 @@ export default function LoginPage() {
             left: 0,
             right: 0,
             bottom: 0,
-            background: "rgba(11, 13, 22, 0.92)",
+            background: "rgba(11, 13, 22, 0.95)",
             backdropFilter: "blur(12px)",
             display: "flex",
             flexDirection: "column",
@@ -169,6 +170,37 @@ export default function LoginPage() {
             padding: "24px",
             textAlign: "center"
           }}>
+            <button
+              onClick={handleCancelGoogleSignIn}
+              style={{
+                position: "absolute",
+                top: "20px",
+                left: "20px",
+                background: "transparent",
+                border: "none",
+                color: "var(--text-secondary, #9ca3af)",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontSize: "14px",
+                fontWeight: "600",
+                cursor: "pointer",
+                transition: "all 0.2s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "#ffffff";
+                e.currentTarget.style.transform = "translateX(-2px)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-secondary, #9ca3af)";
+                e.currentTarget.style.transform = "translateX(0)";
+              }}
+              type="button"
+              title="Back to Login"
+            >
+              <ArrowLeft size={16} />
+              <span>Back</span>
+            </button>
             <div className="spinner" style={{
               width: "48px",
               height: "48px",

@@ -234,3 +234,93 @@ export async function uploadFileNative(params: {
 
   throw new Error("No active native container wrapper is running.");
 }
+
+/**
+ * Triggers a native streaming file download directly to the local filesystem via Rust (Tauri).
+ * Prompts the user with a native Save Dialog to choose the destination, then streams the download
+ * in chunks directly to disk with progress reporting and cancellation.
+ */
+export async function downloadFileNative(params: {
+  url: string;
+  filename: string;
+  onProgress: (bytesDownloaded: number, totalBytes: number) => void;
+  signal?: AbortSignal;
+}): Promise<string | null> {
+  if (!isClient) throw new Error("Native code can only be executed on the client-side.");
+
+  // A. TAURI (DESKTOP) DOWNLOAD BRIDGE
+  if (isTauri()) {
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const { invoke } = await import("@tauri-apps/api/core");
+      const { listen } = await import("@tauri-apps/api/event");
+
+      // 1. Open native Save File Dialog suggesting default asset name
+      const selectedPath = await save({
+        defaultPath: params.filename,
+      });
+
+      if (!selectedPath) {
+        return null; // User cancelled the save dialog
+      }
+
+      if (params.signal?.aborted) {
+        throw new DOMException("Download aborted", "AbortError");
+      }
+
+      const downloadId = selectedPath;
+
+      // 2. Setup listener for progress updates emitted by the Rust downloader
+      const unlisten = await listen<any>("download-progress", (event) => {
+        const { bytesDownloaded, totalBytes, filePath } = event.payload;
+        if (filePath === downloadId) {
+          params.onProgress(bytesDownloaded, totalBytes);
+        }
+      });
+
+      let abortHandler: (() => void) | null = null;
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (params.signal) {
+          abortHandler = async () => {
+            try {
+              // Asynchronously tell Rust backend to halt streaming and delete partial file
+              await invoke("cancel_download", { filePath: downloadId });
+            } catch (err) {
+              console.error("[Native Bridge] cancel_download invoke failed:", err);
+            }
+            reject(new DOMException("Download aborted", "AbortError"));
+          };
+          params.signal.addEventListener("abort", abortHandler);
+        }
+      });
+
+      const downloadPromise = (async () => {
+        await invoke("download_file_native", {
+          url: params.url,
+          filePath: selectedPath,
+        });
+        return selectedPath;
+      })();
+
+      try {
+        const result = await Promise.race([downloadPromise, abortPromise]);
+        unlisten();
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
+        return result;
+      } catch (err) {
+        unlisten();
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
+        throw err;
+      }
+    } catch (err) {
+      console.error("[Native Bridge] Rust download invocation failed:", err);
+      throw err;
+    }
+  }
+
+  throw new Error("No active native container wrapper is running.");
+}

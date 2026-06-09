@@ -224,6 +224,19 @@ function DrivePageContent() {
   const [uploadActive, setUploadActive] = useState(false);
   const [uploadMinimized, setUploadMinimized] = useState(false);
 
+  // Download Drawer State
+  const [downloadProgress, setDownloadProgress] = useState<{
+    [filename: string]: {
+      progress: number;
+      bytesDownloaded: number;
+      totalBytes: number;
+      isCancelled: boolean;
+      isFailed: boolean;
+      controller: AbortController;
+    }
+  }>({});
+  const [downloadActive, setDownloadActive] = useState(false);
+
   // Upload Abort Tracking
   const uploadDetailsRef = useRef<{
     [filename: string]: {
@@ -1028,7 +1041,25 @@ function DrivePageContent() {
     setParams({ path: path.join("/") || null });
   };
 
-  // Download File via Presigned URL
+  const handleCancelDownload = (filename: string) => {
+    const item = downloadProgress[filename];
+    if (item && item.controller) {
+      item.controller.abort();
+      setDownloadProgress(prev => {
+        if (!prev[filename]) return prev;
+        return {
+          ...prev,
+          [filename]: {
+            ...prev[filename],
+            isCancelled: true,
+            progress: -1,
+          }
+        };
+      });
+    }
+  };
+
+  // Download File via Presigned URL (supporting high-performance native streaming inside Tauri)
   const handleDownloadFile = async (assetId: string) => {
     try {
       const { downloadUrl, filename } = explorerMode === "shared"
@@ -1037,13 +1068,96 @@ function DrivePageContent() {
         ? await getArchiveDownloadUrl(assetId)
         : await getDownloadUrl(assetId);
 
-      // Create a temporary anchor element to trigger high-speed direct uploader
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const { isTauri, downloadFileNative } = await import("@/lib/native-bridge");
+
+      if (isTauri()) {
+        const controller = new AbortController();
+
+        setDownloadProgress(prev => ({
+          ...prev,
+          [filename]: {
+            progress: 0,
+            bytesDownloaded: 0,
+            totalBytes: 0,
+            isCancelled: false,
+            isFailed: false,
+            controller,
+          }
+        }));
+        setDownloadActive(true);
+        setUploadMinimized(false); // Open drawer so user sees active download
+
+        try {
+          const result = await downloadFileNative({
+            url: downloadUrl,
+            filename,
+            onProgress: (bytesDownloaded, totalBytes) => {
+              const percent = totalBytes > 0 ? Math.round((bytesDownloaded / totalBytes) * 100) : 0;
+              setDownloadProgress(prev => {
+                if (!prev[filename]) return prev;
+                return {
+                  ...prev,
+                  [filename]: {
+                    ...prev[filename],
+                    progress: percent,
+                    bytesDownloaded,
+                    totalBytes,
+                  }
+                };
+              });
+            },
+            signal: controller.signal,
+          });
+
+          if (result) {
+            // Completed successfully
+            setDownloadProgress(prev => {
+              if (!prev[filename]) return prev;
+              return {
+                ...prev,
+                [filename]: {
+                  ...prev[filename],
+                  progress: 100,
+                  bytesDownloaded: prev[filename].totalBytes,
+                }
+              };
+            });
+            showToast(`Downloaded ${filename} successfully!`, "success");
+          } else {
+            // User cancelled save dialog, remove from progress panel cleanly
+            setDownloadProgress(prev => {
+              const updated = { ...prev };
+              delete updated[filename];
+              return updated;
+            });
+          }
+        } catch (err: any) {
+          const isCancelled = err?.name === "AbortError";
+          setDownloadProgress(prev => {
+            if (!prev[filename]) return prev;
+            return {
+              ...prev,
+              [filename]: {
+                ...prev[filename],
+                isCancelled,
+                isFailed: !isCancelled,
+                progress: isCancelled ? -1 : -2,
+              }
+            };
+          });
+          if (!isCancelled) {
+            showToast(`Failed to download ${filename}`, "error");
+          }
+        }
+      } else {
+        // Standard browser/web fallback download
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
     } catch (err) {
       showToast("Failed to download file", "error");
     }
@@ -3454,13 +3568,17 @@ function DrivePageContent() {
       </main>
 
       {/* FLOATING MULTI-PART UPLOAD / OPERATION PROCESS DRAWER */}
-      {uploadActive && !uploadMinimized && (
+      {(uploadActive || downloadActive) && !uploadMinimized && (
         <div className="progress-drawer">
           <div className="drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <span className="drawer-title" style={{ fontWeight: '600' }}>
               {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"))
-                ? "File Operations & Uploads"
-                : "Uploading Video Chunk(s)"}
+                ? "Transfers & Operations"
+                : (Object.keys(downloadProgress).length > 0 && Object.keys(uploadProgress).length > 0)
+                  ? "Transfers & Operations"
+                  : Object.keys(downloadProgress).length > 0
+                    ? "Downloading File(s)"
+                    : "Uploading Video Chunk(s)"}
             </span>
             <div className="drawer-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button 
@@ -3471,11 +3589,16 @@ function DrivePageContent() {
               >
                 <Minus size={14} />
               </button>
-              {!Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) && (
+              {!(
+                Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ||
+                Object.values(downloadProgress).some(item => !item.isCancelled && !item.isFailed && item.progress < 100)
+              ) && (
                 <button 
                   onClick={() => {
                     setUploadActive(false);
+                    setDownloadActive(false);
                     setUploadProgress({});
+                    setDownloadProgress({});
                   }} 
                   className="btn-icon" 
                   style={{ padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -3487,6 +3610,7 @@ function DrivePageContent() {
             </div>
           </div>
           <div className="drawer-body">
+            {/* Upload items */}
             {Object.entries(uploadProgress).map(([filename, progress]) => {
               const isUploading = progress >= 0 && progress < 100;
               const isCompleted = progress === 100;
@@ -3555,51 +3679,133 @@ function DrivePageContent() {
                 </div>
               );
             })}
+
+            {/* Download items */}
+            {Object.entries(downloadProgress).map(([filename, item]) => {
+              const progress = item.progress;
+              const isDownloading = progress >= 0 && progress < 100 && !item.isCancelled && !item.isFailed;
+              const isCompleted = progress === 100;
+              const isCancelled = item.isCancelled || progress === -1;
+              const isFailed = item.isFailed || progress === -2;
+
+              return (
+                <div key={filename} className="upload-item">
+                  <div className="upload-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexGrow: 1, minWidth: 0, marginRight: '8px' }}>
+                      <Download size={14} style={{ color: 'var(--accent-indigo, #6366f1)', flexShrink: 0 }} />
+                      <span className="upload-name" title={filename} style={{ flexGrow: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        {filename}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                      <span className="upload-status-text" style={{ 
+                        fontSize: '12px', 
+                        fontWeight: '500',
+                        color: isCompleted 
+                          ? 'var(--accent-success, #10b981)' 
+                          : isCancelled 
+                            ? 'var(--text-secondary)' 
+                            : isFailed 
+                              ? 'var(--accent-danger, #ef4444)' 
+                              : 'var(--text-secondary)'
+                      }}>
+                        {isCompleted && "Downloaded"}
+                        {isCancelled && "Cancelled"}
+                        {isFailed && "Failed"}
+                        {isDownloading && `${progress}%`}
+                      </span>
+
+                      {isDownloading && (
+                        <button
+                          onClick={() => handleCancelDownload(filename)}
+                          className="btn-icon cancel-upload-btn"
+                          style={{ 
+                            padding: '2px', 
+                            color: 'var(--text-muted)',
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            cursor: 'pointer'
+                          }}
+                          title="Cancel Download"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="progress-track">
+                    <div 
+                      className={`progress-bar ${isCancelled ? 'cancelled' : isFailed ? 'failed' : ''}`} 
+                      style={{ 
+                        width: `${isCancelled || isFailed ? 100 : progress}%`,
+                        background: isCancelled 
+                          ? 'var(--border-color, #374151)' 
+                          : isFailed 
+                            ? 'var(--accent-danger, #ef4444)' 
+                            : 'linear-gradient(90deg, #6366f1, #a855f7)' // Indigo to Purple gradient
+                      }} 
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* FLOATING MINIMIZED PILL */}
-      {uploadActive && uploadMinimized && (
+      {(uploadActive || downloadActive) && uploadMinimized && (
         <div 
           className="upload-minimized-pill" 
           onClick={() => setUploadMinimized(false)}
-          title="Click to expand upload status"
+          title="Click to expand status"
         >
           <div className="minimized-pill-content">
-            {Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ? (
+            {Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ||
+             Object.values(downloadProgress).some(item => !item.isCancelled && !item.isFailed && item.progress < 100) ? (
               <Loader2 className="upload-spin-icon" size={16} />
             ) : (
               <CheckCircle size={16} style={{ color: "var(--accent-success, #10b981)" }} />
             )}
             <span className="minimized-pill-text">
               {(() => {
-                const activeProgresses = Object.entries(uploadProgress).filter(([_, p]) => p >= 0 && p < 100);
-                const hasActiveOps = activeProgresses.some(([k]) => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"));
-                const hasActiveUploads = activeProgresses.some(([k]) => !k.startsWith("Moving") && !k.startsWith("Copying") && !k.startsWith("Deleting"));
+                const activeUploads = Object.entries(uploadProgress).filter(([k, p]) => p >= 0 && p < 100 && !k.startsWith("Moving") && !k.startsWith("Copying") && !k.startsWith("Deleting"));
+                const activeOps = Object.entries(uploadProgress).filter(([k, p]) => p >= 0 && p < 100 && (k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting")));
+                const activeDownloads = Object.entries(downloadProgress).filter(([_, item]) => !item.isCancelled && !item.isFailed && item.progress >= 0 && item.progress < 100);
 
-                if (activeProgresses.length > 0) {
-                  if (hasActiveUploads && hasActiveOps) {
-                    return "Uploading & transferring items...";
-                  } else if (hasActiveOps) {
-                    const opCount = activeProgresses.filter(([k]) => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting")).length;
-                    return `${opCount} file operation${opCount > 1 ? 's' : ''} in progress`;
-                  } else {
-                    const uploadCount = activeProgresses.length;
-                    const avgProgress = Math.round(activeProgresses.reduce((sum, [_, p]) => sum + p, 0) / uploadCount);
-                    return `Uploading ${uploadCount} file${uploadCount > 1 ? 's' : ''} (${avgProgress}%)`;
+                const upCount = activeUploads.length;
+                const opCount = activeOps.length;
+                const downCount = activeDownloads.length;
+
+                if (upCount > 0 || opCount > 0 || downCount > 0) {
+                  const parts: string[] = [];
+                  if (upCount > 0) {
+                    parts.push(`Uploading ${upCount} file${upCount > 1 ? 's' : ''}`);
                   }
+                  if (downCount > 0) {
+                    parts.push(`Downloading ${downCount} file${downCount > 1 ? 's' : ''}`);
+                  }
+                  if (opCount > 0) {
+                    parts.push(`${opCount} file operation${opCount > 1 ? 's' : ''}`);
+                  }
+                  return parts.join(" & ") + "...";
                 }
                 return "Operations completed";
               })()}
             </span>
           </div>
           <div className="minimized-pill-actions" onClick={(e) => e.stopPropagation()}>
-            {!Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) && (
+            {!(
+              Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ||
+              Object.values(downloadProgress).some(item => !item.isCancelled && !item.isFailed && item.progress < 100)
+            ) && (
               <button 
                 onClick={() => {
                   setUploadActive(false);
+                  setDownloadActive(false);
                   setUploadProgress({});
+                  setDownloadProgress({});
                 }} 
                 className="btn-icon minimized-close-btn"
                 style={{ padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
