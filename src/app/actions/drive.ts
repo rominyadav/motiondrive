@@ -319,7 +319,7 @@ export async function initiateMultipartUpload(params: {
         )
       );
 
-    const currentUsed = sizeQuery?.totalSize ?? 0;
+    const currentUsed = Number(sizeQuery?.totalSize ?? 0);
     if (currentUsed + params.size > limit) {
       const limitGb = (limit / (1024 * 1024 * 1024)).toFixed(1);
       const usedGb = (currentUsed / (1024 * 1024 * 1024)).toFixed(1);
@@ -1626,7 +1626,7 @@ export async function getUserStorageStats() {
         )
       );
 
-    const used = sizeQuery?.totalSize ?? 0;
+    const used = Number(sizeQuery?.totalSize ?? 0);
 
     return {
       used,

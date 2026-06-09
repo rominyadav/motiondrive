@@ -1,0 +1,35 @@
+[[permission]]
+identifier = "allow-upload-file-native"
+description = "Allows the frontend to upload files natively"
+commands.allow = ["upload_file_native"]
+
+[[permission]]
+identifier = "allow-download-file-native"
+description = "Allows the frontend to download files natively"
+commands.allow = ["download_file_native"]
+
+[[permission]]
+identifier = "allow-get-file-metadata"
+description = "Allows the frontend to query file metadata natively"
+commands.allow = ["get_file_metadata"]
+
+[[permission]]
+identifier = "allow-cancel-upload"
+description = "Allows the frontend to cancel a native upload"
+commands.allow = ["cancel_upload"]
+
+[[permission]]
+identifier = "allow-cancel-download"
+description = "Allows the frontend to cancel a native download"
+commands.allow = ["cancel_download"]
+
+[[set]]
+identifier = "app-default"
+description = "Allows all custom app commands by default"
+permissions = [
+  "allow-upload-file-native",
+  "allow-download-file-native",
+  "allow-get-file-metadata",
+  "allow-cancel-upload",
+  "allow-cancel-download"
+]
