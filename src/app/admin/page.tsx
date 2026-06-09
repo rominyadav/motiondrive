@@ -33,7 +33,13 @@ import {
   HardDrive,
   Database,
   Activity,
-  FileText
+  FileText,
+  Search,
+  File,
+  Video,
+  Image,
+  Music,
+  HelpCircle
 } from "lucide-react";
 import Link from "next/link";
 import "./admin.css";
@@ -50,6 +56,8 @@ export default function AdminPage() {
   const [userFilter, setUserFilter] = useState<"all" | "approved" | "pending" | "suspended">("all");
   const [usageStats, setUsageStats] = useState<any>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const [itemsSearchQuery, setItemsSearchQuery] = useState("");
+  const [itemsDriveFilter, setItemsDriveFilter] = useState<"all" | "personal" | "shared" | "archive">("all");
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "manager" | "staff">("staff");
