@@ -1769,6 +1769,8 @@ function DrivePageContent() {
       isShared
     };
 
+    let taskId: any = null;
+
     try {
       // Dynamic chunk sizing tailored for high-concurrency memory efficiency and parallel TCP socket saturation
       let CHUNK_SIZE = 8 * 1024 * 1024; // Default: 8MB
@@ -1888,7 +1890,6 @@ function DrivePageContent() {
       let lastProgressUpdateTime = 0;
       const THROTTLE_MS = 150; // Throttle React re-renders to prevent browser-thread choking
 
-      let taskId: any = null;
       if (isCapacitor()) {
         try {
           const { BackgroundTask } = await import("@capawesome/capacitor-background-task");

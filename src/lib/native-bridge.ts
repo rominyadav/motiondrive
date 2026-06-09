@@ -419,7 +419,10 @@ export async function downloadFileNative(params: {
       });
       return uriResult.uri;
     } catch (err) {
-      await dismissTransferNotification(params.filename);
+      try {
+        const { dismissTransferNotification } = await import("./mobile-notifications");
+        await dismissTransferNotification(params.filename);
+      } catch (e) {}
       console.error("[Native Bridge] Capacitor download failed:", err);
       throw err;
     }
