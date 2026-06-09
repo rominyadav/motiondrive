@@ -329,19 +329,17 @@ export async function downloadFileNative(params: {
       const { Filesystem, Directory } = await import("@capacitor/filesystem");
       const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
       const { updateTransferNotification, dismissTransferNotification } = await import("./mobile-notifications");
+      const { Capacitor } = await import("@capacitor/core");
 
-      // Check and request storage permissions if accessing public directories
-      try {
-        const permStatus = await Filesystem.checkPermissions();
-        if (permStatus.publicStorage !== "granted") {
-          const requestStatus = await Filesystem.requestPermissions();
-          if (requestStatus.publicStorage !== "granted") {
-            console.warn("[Native Bridge] Storage permission was not granted by user.");
-          }
-        }
-      } catch (err) {
-        console.error("[Native Bridge] Error checking/requesting storage permissions:", err);
-      }
+      const platform = Capacitor.getPlatform();
+      // On Android, Directory.Documents is a public directory which requires storage permissions
+      // (highly restricted / non-functional on Android 13+ under Scoped Storage).
+      // Directory.External points to the app's persistent external storage (Android/data/com.package/files)
+      // which requires ZERO permissions on any Android version.
+      // Additionally, Android's system DownloadManager (used by Filesystem.downloadFile) CANNOT write to app-private
+      // directories like Directory.External directly, which causes native hangs.
+      // Therefore, the only reliable way to download on Android 10+ is a standard JS fetch loop writing to Directory.External.
+      const targetDirectory = platform === "android" ? Directory.External : Directory.Documents;
 
       const response = await fetch(params.url, { signal: params.signal });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -379,10 +377,10 @@ export async function downloadFileNative(params: {
         return window.btoa(binary);
       };
 
-      // Buffer chunks to write in larger blocks (e.g. 2MB) to completely bypass native bridge IPC overhead
+      // Buffer chunks to write in larger blocks (e.g. 512KB) to bypass native bridge IPC overhead
       let bufferedChunks: Uint8Array[] = [];
       let bufferedBytes = 0;
-      const BUFFER_LIMIT = 2 * 1024 * 1024; // 2MB
+      const BUFFER_LIMIT = 512 * 1024; // 512KB
 
       const flushBuffer = async () => {
         if (bufferedChunks.length === 0) return;
@@ -401,7 +399,7 @@ export async function downloadFileNative(params: {
           await Filesystem.writeFile({
             path: params.filename,
             data: base64Data,
-            directory: Directory.Documents,
+            directory: targetDirectory,
             recursive: true
           });
           firstWrite = false;
@@ -409,13 +407,17 @@ export async function downloadFileNative(params: {
           await Filesystem.appendFile({
             path: params.filename,
             data: base64Data,
-            directory: Directory.Documents
+            directory: targetDirectory
           });
         }
 
         bufferedChunks = [];
         bufferedBytes = 0;
       };
+
+      // Throttle the progress updates slightly to keep UI fluid
+      let lastProgressUpdate = 0;
+      const PROGRESS_THROTTLE_MS = 100;
 
       while (true) {
         if (params.signal?.aborted) {
@@ -432,16 +434,22 @@ export async function downloadFileNative(params: {
         bufferedBytes += value.length;
         bytesDownloaded += value.length;
 
-        params.onProgress(bytesDownloaded, totalBytes);
+        const now = Date.now();
+        if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || bytesDownloaded === totalBytes) {
+          params.onProgress(bytesDownloaded, totalBytes);
+          lastProgressUpdate = now;
 
-        // Update system tray progress notification (with speed & ETA)
-        await updateTransferNotification({
-          key: params.filename,
-          title: params.filename,
-          type: "download",
-          bytesTransferred: bytesDownloaded,
-          totalBytes,
-        });
+          // Update system tray progress notification
+          try {
+            await updateTransferNotification({
+              key: params.filename,
+              title: params.filename,
+              type: "download",
+              bytesTransferred: bytesDownloaded,
+              totalBytes,
+            });
+          } catch (e) {}
+        }
 
         if (bufferedBytes >= BUFFER_LIMIT) {
           await flushBuffer();
@@ -449,13 +457,15 @@ export async function downloadFileNative(params: {
       }
 
       // Finalize notification as completed
-      await updateTransferNotification({
-        key: params.filename,
-        title: params.filename,
-        type: "download",
-        bytesTransferred: totalBytes,
-        totalBytes,
-      });
+      try {
+        await updateTransferNotification({
+          key: params.filename,
+          title: params.filename,
+          type: "download",
+          bytesTransferred: totalBytes,
+          totalBytes,
+        });
+      } catch (e) {}
 
       if (taskId) {
         BackgroundTask.finish({ taskId });
@@ -463,7 +473,7 @@ export async function downloadFileNative(params: {
 
       const uriResult = await Filesystem.getUri({
         path: params.filename,
-        directory: Directory.Documents
+        directory: targetDirectory
       });
       return uriResult.uri;
     } catch (err) {
