@@ -221,6 +221,7 @@ function DrivePageContent() {
 
   // Upload Drawer State
   const [uploadProgress, setUploadProgress] = useState<{ [filename: string]: number }>({});
+  const [uploadErrors, setUploadErrors] = useState<{ [filename: string]: string }>({});
   const [uploadActive, setUploadActive] = useState(false);
   const [uploadMinimized, setUploadMinimized] = useState(false);
 
@@ -1634,6 +1635,11 @@ function DrivePageContent() {
   ) => {
     const filename = file.name;
     setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
+    setUploadErrors((prev) => {
+      const next = { ...prev };
+      delete next[filename];
+      return next;
+    });
     setUploadMinimized(false); // Auto-expand drawer on new upload
 
     const isShared = explorerMode === "shared";
@@ -1878,9 +1884,11 @@ function DrivePageContent() {
         }
         setUploadProgress((prev) => ({ ...prev, [filename]: -1 }));
       } else {
+        const errorMsg = err.message || String(err);
+        setUploadErrors((prev) => ({ ...prev, [filename]: errorMsg }));
         setUploadProgress((prev) => ({ ...prev, [filename]: -2 }));
         console.error("Multipart upload failed for " + filename, err);
-        showToast(`Failed to upload ${filename}`, "error");
+        showToast(`Failed to upload ${filename}: ${errorMsg}`, "error");
       }
       throw err;
     } finally {
@@ -2023,6 +2031,11 @@ function DrivePageContent() {
       for (const nativeFile of nativeFiles) {
         const filename = nativeFile.name;
         setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
+        setUploadErrors((prev) => {
+          const next = { ...prev };
+          delete next[filename];
+          return next;
+        });
         setUploadMinimized(false);
 
         const controller = new AbortController();
@@ -2151,9 +2164,11 @@ function DrivePageContent() {
             }
             setUploadProgress((prev) => ({ ...prev, [filename]: -1 }));
           } else {
+            const errorMsg = fileErr.message || String(fileErr);
+            setUploadErrors((prev) => ({ ...prev, [filename]: errorMsg }));
             console.error("Native upload failed for " + filename, fileErr);
             setUploadProgress((prev) => ({ ...prev, [filename]: -2 }));
-            showToast(`Failed to upload ${filename}`, "error");
+            showToast(`Failed to upload ${filename}: ${errorMsg}`, "error");
           }
         } finally {
           delete uploadDetailsRef.current[filename];
@@ -3676,6 +3691,11 @@ function DrivePageContent() {
                       }} 
                     />
                   </div>
+                  {isFailed && uploadErrors[filename] && (
+                    <div style={{ fontSize: '10px', color: 'var(--accent-danger, #ef4444)', marginTop: '4px', wordBreak: 'break-all', opacity: 0.9 }}>
+                      {uploadErrors[filename]}
+                    </div>
+                  )}
                 </div>
               );
             })}

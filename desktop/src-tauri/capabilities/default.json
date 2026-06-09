@@ -28,6 +28,8 @@
     "core:webview:allow-get-all-webviews",
     "core:app:default",
     "dialog:default",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "app-default"
   ]
 }
