@@ -8,6 +8,7 @@ interface NotificationProgress {
   startTime: number;
   lastUpdateTime: number;
   lastBytesTransferred: number;
+  lastPercent?: number;
 }
 
 const activeNotifications: { [key: string]: NotificationProgress } = {};
@@ -74,17 +75,6 @@ export async function updateTransferNotification(params: {
   bytesTransferred: number;
   totalBytes: number;
 }) {
-  // Bypass local notifications on Capacitor to prevent native bridge flooding and deadlocks during active transfers
-  if (isCapacitor()) {
-    const percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
-    return {
-      speed: 0,
-      speedText: "",
-      etaText: "",
-      percent,
-    };
-  }
-
   const plugin = await getNotificationsPlugin();
   if (!plugin) return;
 
@@ -101,6 +91,7 @@ export async function updateTransferNotification(params: {
       startTime: now,
       lastUpdateTime: now,
       lastBytesTransferred: params.bytesTransferred,
+      lastPercent: -1,
     };
     activeNotifications[params.key] = item;
   }
@@ -108,24 +99,45 @@ export async function updateTransferNotification(params: {
   const elapsedMs = now - item.lastUpdateTime;
   const totalElapsedMs = now - item.startTime;
 
-  // Throttle updates
-  if (elapsedMs < THROTTLE_MS && params.bytesTransferred < params.totalBytes && params.bytesTransferred > 0) {
-    return;
+  // Calculate Average Speed
+  let avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
+  let percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
+  const isComplete = params.bytesTransferred >= params.totalBytes;
+
+  // Calculate ETA (seconds)
+  let remainingBytes = params.totalBytes - params.bytesTransferred;
+  let etaSeconds = avgSpeed > 0 ? remainingBytes / avgSpeed : Infinity;
+
+  // Segment progress into 5% buckets (0, 5, 10, ..., 95, 100) to keep native IPC overhead near zero.
+  // We only trigger a native notification update when moving to a new 5% bucket.
+  const currentBucket = Math.floor(percent / 5);
+  const lastBucket = Math.floor((item.lastPercent ?? -1) / 5);
+
+  if (!isComplete && currentBucket === lastBucket && params.bytesTransferred > 0) {
+    return {
+      speed: avgSpeed,
+      speedText: formatSpeed(avgSpeed),
+      etaText: formatETA(etaSeconds),
+      percent,
+    };
   }
+
+  // Update last tracked percentage
+  item.lastPercent = percent;
 
   // Calculate Speed (bytes per second)
   const bytesSinceLast = params.bytesTransferred - item.lastBytesTransferred;
   const speed = elapsedMs > 0 ? (bytesSinceLast / elapsedMs) * 1000 : 0;
   
   // Calculate Average Speed
-  const avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
+  avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
   const currentSpeed = speed > 0 ? speed : avgSpeed;
 
   // Calculate ETA (seconds)
-  const remainingBytes = params.totalBytes - params.bytesTransferred;
-  const etaSeconds = currentSpeed > 0 ? remainingBytes / currentSpeed : Infinity;
+  remainingBytes = params.totalBytes - params.bytesTransferred;
+  etaSeconds = currentSpeed > 0 ? remainingBytes / currentSpeed : Infinity;
 
-  const percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
+  percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
 
   // Update tracking item
   item.bytesTransferred = params.bytesTransferred;
@@ -145,6 +157,7 @@ export async function updateTransferNotification(params: {
           body: `${item.title} completed!`,
           channelId: "transfer-progress",
           schedule: { at: new Date(Date.now() + 50) },
+          ongoing: false,
         },
       ],
     });
@@ -159,6 +172,7 @@ export async function updateTransferNotification(params: {
           body: `${percent}% • ${speedText} • ETA: ${etaText}`,
           channelId: "transfer-progress",
           schedule: { at: new Date(Date.now() + 50) },
+          ongoing: true,
           extra: {
             progress: percent / 100, // custom progress bar for notification tray
           }
