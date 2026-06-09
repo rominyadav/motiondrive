@@ -1,0 +1,179 @@
+import { isCapacitor } from "./native-bridge";
+
+interface NotificationProgress {
+  id: number;
+  title: string;
+  totalBytes: number;
+  bytesTransferred: number;
+  startTime: number;
+  lastUpdateTime: number;
+  lastBytesTransferred: number;
+}
+
+const activeNotifications: { [key: string]: NotificationProgress } = {};
+let localNotificationsPlugin: any = null;
+
+// Throttled notification updates (max 2 updates per second per notification to prevent UI lag)
+const THROTTLE_MS = 600;
+
+async function getNotificationsPlugin() {
+  if (localNotificationsPlugin) return localNotificationsPlugin;
+  if (isCapacitor()) {
+    try {
+      const { LocalNotifications } = await import("@capacitor/local-notifications");
+      localNotificationsPlugin = LocalNotifications;
+      
+      // Request permission upon first load
+      await localNotificationsPlugin.requestPermissions();
+      
+      // Create channel for progress updates
+      await localNotificationsPlugin.createChannel({
+        id: "transfer-progress",
+        name: "Transfer Progress",
+        description: "Shows active upload and download progress and speeds",
+        importance: 3, // default importance
+        sound: "silent", // prevent constant buzzing
+        vibration: false,
+      });
+    } catch (err) {
+      console.error("Failed to initialize LocalNotifications:", err);
+    }
+  }
+  return localNotificationsPlugin;
+}
+
+/**
+ * Format bytes to readable human speeds (e.g. 1.24 MB/s)
+ */
+export function formatSpeed(bytesPerSec: number): string {
+  if (bytesPerSec <= 0) return "0 B/s";
+  const k = 1024;
+  const sizes = ["B/s", "KB/s", "MB/s", "GB/s"];
+  const i = Math.floor(Math.log(bytesPerSec) / Math.log(k));
+  return `${parseFloat((bytesPerSec / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+}
+
+/**
+ * Format remaining seconds to readable ETA (e.g. 1m 24s)
+ */
+export function formatETA(seconds: number): string {
+  if (seconds === Infinity || isNaN(seconds) || seconds <= 0) return "Estimating...";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}m ${secs}s`;
+}
+
+/**
+ * Initialize or update a transfer notification in the system tray
+ */
+export async function updateTransferNotification(params: {
+  key: string; // unique filename or task key
+  title: string;
+  type: "upload" | "download";
+  bytesTransferred: number;
+  totalBytes: number;
+}) {
+  const plugin = await getNotificationsPlugin();
+  if (!plugin) return;
+
+  const now = Date.now();
+  let item = activeNotifications[params.key];
+
+  if (!item) {
+    const id = Math.floor(Math.random() * 100000) + 1;
+    item = {
+      id,
+      title: params.title,
+      totalBytes: params.totalBytes,
+      bytesTransferred: params.bytesTransferred,
+      startTime: now,
+      lastUpdateTime: now,
+      lastBytesTransferred: params.bytesTransferred,
+    };
+    activeNotifications[params.key] = item;
+  }
+
+  const elapsedMs = now - item.lastUpdateTime;
+  const totalElapsedMs = now - item.startTime;
+
+  // Throttle updates
+  if (elapsedMs < THROTTLE_MS && params.bytesTransferred < params.totalBytes && params.bytesTransferred > 0) {
+    return;
+  }
+
+  // Calculate Speed (bytes per second)
+  const bytesSinceLast = params.bytesTransferred - item.lastBytesTransferred;
+  const speed = elapsedMs > 0 ? (bytesSinceLast / elapsedMs) * 1000 : 0;
+  
+  // Calculate Average Speed
+  const avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
+  const currentSpeed = speed > 0 ? speed : avgSpeed;
+
+  // Calculate ETA (seconds)
+  const remainingBytes = params.totalBytes - params.bytesTransferred;
+  const etaSeconds = currentSpeed > 0 ? remainingBytes / currentSpeed : Infinity;
+
+  const percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
+
+  // Update tracking item
+  item.bytesTransferred = params.bytesTransferred;
+  item.lastBytesTransferred = params.bytesTransferred;
+  item.lastUpdateTime = now;
+
+  const speedText = formatSpeed(currentSpeed);
+  const etaText = formatETA(etaSeconds);
+
+  if (params.bytesTransferred >= params.totalBytes) {
+    // Complete notification
+    await plugin.schedule({
+      notifications: [
+        {
+          id: item.id,
+          title: `Finished ${params.type === "upload" ? "Uploading" : "Downloading"}`,
+          body: `${item.title} completed!`,
+          channelId: "transfer-progress",
+          schedule: { at: new Date(Date.now() + 50) },
+        },
+      ],
+    });
+    delete activeNotifications[params.key];
+  } else {
+    // Ongoing progress notification
+    await plugin.schedule({
+      notifications: [
+        {
+          id: item.id,
+          title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
+          body: `${percent}% • ${speedText} • ETA: ${etaText}`,
+          channelId: "transfer-progress",
+          schedule: { at: new Date(Date.now() + 50) },
+          extra: {
+            progress: percent / 100, // custom progress bar for notification tray
+          }
+        },
+      ],
+    });
+  }
+
+  return {
+    speed: currentSpeed,
+    speedText,
+    etaText,
+    percent,
+  };
+}
+
+/**
+ * Dismiss a progress notification cleanly (e.g. upon user cancellation)
+ */
+export async function dismissTransferNotification(key: string) {
+  const plugin = await getNotificationsPlugin();
+  const item = activeNotifications[key];
+  if (plugin && item) {
+    await plugin.cancel({
+      notifications: [{ id: item.id }],
+    });
+    delete activeNotifications[key];
+  }
+}
