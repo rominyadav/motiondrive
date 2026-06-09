@@ -353,14 +353,34 @@ export async function downloadFileNative(params: {
       if (!reader) throw new Error("ReadableStream is not supported on this response body.");
 
       // Keep background task alive so OS doesn't freeze the WebView thread when device is locked/closed
-      const taskId = await BackgroundTask.beforeExit(async () => {});
+      let downloadFinished = false;
+      let resolveBackgroundTask: (() => void) | null = null;
+      const backgroundTaskPromise = new Promise<void>((resolve) => {
+        resolveBackgroundTask = resolve;
+      });
+
+      let taskId: any = null;
+      try {
+        taskId = await BackgroundTask.beforeExit(async () => {
+          if (!downloadFinished) {
+            await backgroundTaskPromise;
+          }
+          if (taskId) {
+            const id = typeof taskId === "object" && taskId.taskId ? taskId.taskId : taskId;
+            await BackgroundTask.finish({ taskId: id });
+          }
+        });
+      } catch (err) {
+        console.warn("Failed to start BackgroundTask:", err);
+      }
 
       // Clean up notifications on abort
+      let abortHandler: (() => void) | null = null;
       if (params.signal) {
-        params.signal.addEventListener("abort", async () => {
+        abortHandler = async () => {
           await dismissTransferNotification(params.filename);
-          if (taskId) BackgroundTask.finish({ taskId });
-        });
+        };
+        params.signal.addEventListener("abort", abortHandler);
       }
 
       let bytesDownloaded = 0;
@@ -419,56 +439,65 @@ export async function downloadFileNative(params: {
       let lastProgressUpdate = 0;
       const PROGRESS_THROTTLE_MS = 100;
 
-      while (true) {
-        if (params.signal?.aborted) {
-          throw new DOMException("Download aborted", "AbortError");
-        }
+      try {
+        while (true) {
+          if (params.signal?.aborted) {
+            throw new DOMException("Download aborted", "AbortError");
+          }
 
-        const { done, value } = await reader.read();
-        if (done) {
-          await flushBuffer();
-          break;
-        }
+          const { done, value } = await reader.read();
+          if (done) {
+            await flushBuffer();
+            break;
+          }
 
-        bufferedChunks.push(value);
-        bufferedBytes += value.length;
-        bytesDownloaded += value.length;
+          bufferedChunks.push(value);
+          bufferedBytes += value.length;
+          bytesDownloaded += value.length;
 
-        const now = Date.now();
-        if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || bytesDownloaded === totalBytes) {
-          params.onProgress(bytesDownloaded, totalBytes);
-          lastProgressUpdate = now;
+          const now = Date.now();
+          if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || bytesDownloaded === totalBytes) {
+            params.onProgress(bytesDownloaded, totalBytes);
+            lastProgressUpdate = now;
 
-          // Update system tray progress notification
-          try {
-            await updateTransferNotification({
+            // Update system tray progress notification asynchronously
+            updateTransferNotification({
               key: params.filename,
               title: params.filename,
               type: "download",
               bytesTransferred: bytesDownloaded,
               totalBytes,
-            });
-          } catch (e) {}
+            }).catch(() => {});
+          }
+
+          if (bufferedBytes >= BUFFER_LIMIT) {
+            await flushBuffer();
+          }
         }
 
-        if (bufferedBytes >= BUFFER_LIMIT) {
-          await flushBuffer();
-        }
-      }
-
-      // Finalize notification as completed
-      try {
-        await updateTransferNotification({
+        // Finalize notification as completed asynchronously
+        updateTransferNotification({
           key: params.filename,
           title: params.filename,
           type: "download",
           bytesTransferred: totalBytes,
           totalBytes,
-        });
-      } catch (e) {}
+        }).catch(() => {});
 
-      if (taskId) {
-        BackgroundTask.finish({ taskId });
+      } finally {
+        downloadFinished = true;
+        resolveBackgroundTask?.();
+
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
+
+        if (taskId) {
+          try {
+            const id = typeof taskId === "object" && taskId.taskId ? taskId.taskId : taskId;
+            await BackgroundTask.finish({ taskId: id });
+          } catch (e) {}
+        }
       }
 
       const uriResult = await Filesystem.getUri({
