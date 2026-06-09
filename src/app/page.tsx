@@ -156,7 +156,7 @@ function DrivePageContent() {
   const { data: storageStats = null, refetch: fetchStorageStats } = useQuery({
     queryKey: ["storageStats"],
     queryFn: getUserStorageStats,
-    enabled: !!session && explorerMode !== "shared" && explorerMode !== "archive" && explorerMode !== "links",
+    enabled: !!session,
   });
 
   // TanStack Query for Detailed Storage Analytics (only loaded when modal is shown)

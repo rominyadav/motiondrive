@@ -304,6 +304,66 @@ export interface PlatformUsageStats {
   projects: {
     totalCount: number;
   };
+  allItems: {
+    id: string;
+    filename: string;
+    size: number;
+    mimeType: string;
+    driveType: "personal" | "shared" | "archive";
+    uploadedBy: string;
+    uploadedAt: Date;
+  }[];
+}
+
+/**
+ * Helper to fetch all items recursively in an S3/R2/B2 bucket and map them to standard items.
+ */
+async function getBucketItems(client: any, bucketName: string, driveType: "shared" | "archive") {
+  const items: any[] = [];
+  let continuationToken: string | undefined = undefined;
+
+  try {
+    do {
+      const command: ListObjectsV2Command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        ContinuationToken: continuationToken,
+      });
+      const response = await client.send(command);
+      const contents = response.Contents || [];
+      
+      for (const item of contents) {
+        if (item.Key && !item.Key.endsWith("/")) {
+          // Detect mimeType loosely based on file extension
+          const filename = item.Key.split("/").pop() || item.Key;
+          const ext = filename.split(".").pop()?.toLowerCase();
+          let mimeType = "application/octet-stream";
+          if (ext) {
+            if (["mp4", "mkv", "mov", "avi", "webm"].includes(ext)) mimeType = "video/" + ext;
+            else if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext)) mimeType = "image/" + ext;
+            else if (["mp3", "wav", "ogg", "m4a"].includes(ext)) mimeType = "audio/" + ext;
+            else if (["pdf"].includes(ext)) mimeType = "application/pdf";
+            else if (["txt", "md", "json"].includes(ext)) mimeType = "text/plain";
+          }
+
+          items.push({
+            id: `${driveType}:${item.Key}`,
+            filename: item.Key,
+            size: item.Size || 0,
+            mimeType,
+            driveType,
+            uploadedBy: driveType === "shared" ? "Shared Drive System" : "Archive Drive System",
+            uploadedAt: item.LastModified || new Date(),
+          });
+        }
+      }
+      
+      continuationToken = response.NextContinuationToken;
+    } while (continuationToken);
+  } catch (error) {
+    console.error(`Failed to get items for bucket ${bucketName}:`, error);
+  }
+
+  return items;
 }
 
 /**
@@ -316,7 +376,10 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
   const completedAssets = await db
     .select({
       id: assets.id,
+      filename: assets.filename,
       size: assets.size,
+      mimeType: assets.mimeType,
+      uploadedAt: assets.uploadedAt,
       uploadedBy: assets.uploadedBy,
     })
     .from(assets)
@@ -351,6 +414,8 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
   }
 
   const allUsers = await db.select().from(user);
+  const userMap = new Map(allUsers.map((u) => [u.id, u]));
+
   const perUserUsage: UserUsage[] = allUsers.map((u) => {
     const usage = userUsageMap[u.id] || { size: 0, items: 0 };
     return {
@@ -366,11 +431,33 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
     };
   });
 
+  const personalItems = completedAssets.map((asset) => {
+    const uploader = asset.uploadedBy ? userMap.get(asset.uploadedBy) : null;
+    return {
+      id: asset.id,
+      filename: asset.filename,
+      size: asset.size,
+      mimeType: asset.mimeType,
+      driveType: "personal" as const,
+      uploadedBy: uploader ? `${uploader.name} (${uploader.email})` : "Unknown User",
+      uploadedAt: asset.uploadedAt,
+    };
+  });
+
   // 2. Shared Drive Usage (R2 Bucket direct)
   const sharedUsage = await getBucketUsage(r2Client, R2_SHARED_BUCKET_NAME);
+  const sharedItems = await getBucketItems(r2Client, R2_SHARED_BUCKET_NAME, "shared");
 
   // 3. Archive Drive Usage (B2 Bucket direct)
   const archiveUsage = await getBucketUsage(b2Client, B2_BUCKET_NAME);
+  const archiveItems = await getBucketItems(b2Client, B2_BUCKET_NAME, "archive");
+
+  // Unify and sort all items across all drives by date descending
+  const allItems = [
+    ...personalItems,
+    ...sharedItems,
+    ...archiveItems,
+  ].sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 
   return {
     personal: {
@@ -389,6 +476,7 @@ export async function getPlatformUsageStats(): Promise<PlatformUsageStats> {
     projects: {
       totalCount: totalProjects,
     },
+    allItems,
   };
 }
 
