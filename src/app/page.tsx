@@ -1167,6 +1167,9 @@ function DrivePageContent() {
         ? await getArchiveDownloadUrl(assetId)
         : await getDownloadUrl(assetId);
 
+      const fileObj = driveData?.assets?.find((a: any) => a.id === assetId);
+      const knownSize = fileObj?.size ? Number(fileObj.size) : undefined;
+
       const { isTauri, isCapacitor, downloadFileNative } = await import("@/lib/native-bridge");
 
       if (isTauri() || isCapacitor()) {
@@ -1177,7 +1180,7 @@ function DrivePageContent() {
           [filename]: {
             progress: 0,
             bytesDownloaded: 0,
-            totalBytes: 0,
+            totalBytes: knownSize || 0,
             isCancelled: false,
             isFailed: false,
             controller,
@@ -1192,6 +1195,7 @@ function DrivePageContent() {
           const result = await downloadFileNative({
             url: downloadUrl,
             filename,
+            knownSize,
             onProgress: (bytesDownloaded, totalBytes) => {
               const percent = totalBytes > 0 ? Math.round((bytesDownloaded / totalBytes) * 100) : 0;
               
