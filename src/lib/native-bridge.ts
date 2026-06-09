@@ -13,10 +13,7 @@ const isClient = typeof window !== "undefined";
  */
 export function isNativeApp(): boolean {
   if (!isClient) return false;
-  // Tauri (Desktop) uses native OS file picker and Rust parallel chunk uploader.
-  // Capacitor (Mobile) works perfectly out-of-the-box with standard HTML5 file inputs
-  // and the high-speed concurrent JavaScript chunk uploader.
-  return isTauri();
+  return isTauri() || isCapacitor();
 }
 
 /**
@@ -321,6 +318,112 @@ export async function downloadFileNative(params: {
       }
     } catch (err) {
       console.error("[Native Bridge] Rust download invocation failed:", err);
+      throw err;
+    }
+  }
+
+  // B. CAPACITOR (ANDROID) DOWNLOAD IMPLEMENTATION
+  if (isCapacitor()) {
+    try {
+      const { Filesystem, Directory } = await import("@capacitor/filesystem");
+      const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
+      const { updateTransferNotification, dismissTransferNotification } = await import("./mobile-notifications");
+
+      const response = await fetch(params.url, { signal: params.signal });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      const totalBytes = Number(response.headers.get("content-length")) || 0;
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("ReadableStream is not supported on this response body.");
+
+      // Keep background task alive so OS doesn't freeze the WebView thread when device is locked/closed
+      const taskId = await BackgroundTask.beforeExit(async () => {});
+
+      // Clean up notifications on abort
+      if (params.signal) {
+        params.signal.addEventListener("abort", async () => {
+          await dismissTransferNotification(params.filename);
+          if (taskId) BackgroundTask.finish({ taskId });
+        });
+      }
+
+      let bytesDownloaded = 0;
+      let firstWrite = true;
+
+      // Helper to convert Uint8Array chunk to base64 string
+      const arrayBufferToBase64 = (buffer: Uint8Array): string => {
+        let binary = "";
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      };
+
+      while (true) {
+        if (params.signal?.aborted) {
+          throw new DOMException("Download aborted", "AbortError");
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const base64Data = arrayBufferToBase64(value);
+        
+        if (firstWrite) {
+          await Filesystem.writeFile({
+            path: params.filename,
+            data: base64Data,
+            directory: Directory.Documents,
+            recursive: true
+          });
+          firstWrite = false;
+        } else {
+          await Filesystem.appendFile({
+            path: params.filename,
+            data: base64Data,
+            directory: Directory.Documents
+          });
+        }
+
+        bytesDownloaded += value.length;
+        params.onProgress(bytesDownloaded, totalBytes);
+
+        // Update system tray progress notification (with speed & ETA)
+        await updateTransferNotification({
+          key: params.filename,
+          title: params.filename,
+          type: "download",
+          bytesTransferred: bytesDownloaded,
+          totalBytes,
+        });
+      }
+
+      // Finalize notification as completed
+      await updateTransferNotification({
+        key: params.filename,
+        title: params.filename,
+        type: "download",
+        bytesTransferred: totalBytes,
+        totalBytes,
+      });
+
+      if (taskId) {
+        BackgroundTask.finish({ taskId });
+      }
+
+      const uriResult = await Filesystem.getUri({
+        path: params.filename,
+        directory: Directory.Documents
+      });
+      return uriResult.uri;
+    } catch (err) {
+      try {
+        const { dismissTransferNotification } = await import("./mobile-notifications");
+        await dismissTransferNotification(params.filename);
+      } catch (e) {}
+      console.error("[Native Bridge] Capacitor download failed:", err);
       throw err;
     }
   }

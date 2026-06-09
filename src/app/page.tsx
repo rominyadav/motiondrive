@@ -36,7 +36,7 @@ import {
   getUserStorageStats,
   getUserDetailedUsageStats
 } from "@/app/actions/drive";
-import { isNativeApp, pickFilesNative, uploadFileNative } from "@/lib/native-bridge";
+import { isNativeApp, pickFilesNative, uploadFileNative, isCapacitor } from "@/lib/native-bridge";
 import {
   createSharedLink,
   listMySharedLinks,
@@ -225,7 +225,6 @@ function DrivePageContent() {
   const [uploadActive, setUploadActive] = useState(false);
   const [uploadMinimized, setUploadMinimized] = useState(false);
 
-  // Download Drawer State
   const [downloadProgress, setDownloadProgress] = useState<{
     [filename: string]: {
       progress: number;
@@ -237,6 +236,9 @@ function DrivePageContent() {
     }
   }>({});
   const [downloadActive, setDownloadActive] = useState(false);
+  const [transferMetrics, setTransferMetrics] = useState<{
+    [filename: string]: { speedText: string; etaText: string }
+  }>({});
 
   // Upload Abort Tracking
   const uploadDetailsRef = useRef<{
@@ -344,6 +346,102 @@ function DrivePageContent() {
   const [docTitle, setDocTitle] = useState("");
   const [docsEditorMode, setDocsEditorMode] = useState<"create" | "edit">("create");
   const [docsEditorAsset, setDocsEditorAsset] = useState<any | null>(null);
+
+  // Offline Caching & Preferences Synchronization for Capacitor
+  useEffect(() => {
+    if (!isCapacitor()) return;
+    async function loadCachedData() {
+      try {
+        const { Preferences } = await import("@capacitor/preferences");
+        
+        // 1. Session Cache
+        const cachedSession = await Preferences.get({ key: "cached_session" });
+        if (cachedSession.value) {
+          try {
+            setSession(JSON.parse(cachedSession.value));
+            setLoading(false);
+          } catch (e) {}
+        }
+        
+        // 2. Storage Stats Cache
+        const cachedStorage = await Preferences.get({ key: "cached_storage_stats" });
+        if (cachedStorage.value) {
+          try {
+            queryClient.setQueryData(["storageStats"], JSON.parse(cachedStorage.value));
+          } catch (e) {}
+        }
+        
+        // 3. Projects Cache
+        const cachedProjects = await Preferences.get({ key: "cached_projects" });
+        if (cachedProjects.value) {
+          try {
+            queryClient.setQueryData(["projects"], JSON.parse(cachedProjects.value));
+          } catch (e) {}
+        }
+        
+        // 4. Drive Contents Cache
+        const cachedContentsKey = `cached_drive_contents_${explorerMode}_${selectedProjectId || "null"}_${currentFolderId || "null"}_${rawPath || "null"}`;
+        const cachedContents = await Preferences.get({ key: cachedContentsKey });
+        if (cachedContents.value) {
+          try {
+            queryClient.setQueryData(["driveContents", explorerMode, selectedProjectId, currentFolderId, rawPath], JSON.parse(cachedContents.value));
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.error("Failed to load offline cache:", err);
+      }
+    }
+    loadCachedData();
+  }, [queryClient, explorerMode, selectedProjectId, currentFolderId, rawPath]);
+
+  // Synchronize Session Cache
+  useEffect(() => {
+    if (!isCapacitor() || !session) return;
+    async function cacheSession() {
+      try {
+        const { Preferences } = await import("@capacitor/preferences");
+        await Preferences.set({ key: "cached_session", value: JSON.stringify(session) });
+      } catch (e) {}
+    }
+    cacheSession();
+  }, [session]);
+
+  // Synchronize Drive Contents Cache
+  useEffect(() => {
+    if (!isCapacitor() || !driveData || (driveData.folders.length === 0 && driveData.assets.length === 0)) return;
+    async function cacheDriveContents() {
+      try {
+        const { Preferences } = await import("@capacitor/preferences");
+        const cachedContentsKey = `cached_drive_contents_${explorerMode}_${selectedProjectId || "null"}_${currentFolderId || "null"}_${rawPath || "null"}`;
+        await Preferences.set({ key: cachedContentsKey, value: JSON.stringify(driveData) });
+      } catch (e) {}
+    }
+    cacheDriveContents();
+  }, [driveData, explorerMode, selectedProjectId, currentFolderId, rawPath]);
+
+  // Synchronize Projects Cache
+  useEffect(() => {
+    if (!isCapacitor() || !projects || projects.length === 0) return;
+    async function cacheProjects() {
+      try {
+        const { Preferences } = await import("@capacitor/preferences");
+        await Preferences.set({ key: "cached_projects", value: JSON.stringify(projects) });
+      } catch (e) {}
+    }
+    cacheProjects();
+  }, [projects]);
+
+  // Synchronize Storage Stats Cache
+  useEffect(() => {
+    if (!isCapacitor() || !storageStats) return;
+    async function cacheStorageStats() {
+      try {
+        const { Preferences } = await import("@capacitor/preferences");
+        await Preferences.set({ key: "cached_storage_stats", value: JSON.stringify(storageStats) });
+      } catch (e) {}
+    }
+    cacheStorageStats();
+  }, [storageStats]);
 
   // Blank Sheet Editor State
   const [sheetModalOpen, setSheetModalOpen] = useState(false);
@@ -1069,9 +1167,9 @@ function DrivePageContent() {
         ? await getArchiveDownloadUrl(assetId)
         : await getDownloadUrl(assetId);
 
-      const { isTauri, downloadFileNative } = await import("@/lib/native-bridge");
+      const { isTauri, isCapacitor, downloadFileNative } = await import("@/lib/native-bridge");
 
-      if (isTauri()) {
+      if (isTauri() || isCapacitor()) {
         const controller = new AbortController();
 
         setDownloadProgress(prev => ({
@@ -1088,12 +1186,29 @@ function DrivePageContent() {
         setDownloadActive(true);
         setUploadMinimized(false); // Open drawer so user sees active download
 
+        const startTime = Date.now();
+
         try {
           const result = await downloadFileNative({
             url: downloadUrl,
             filename,
             onProgress: (bytesDownloaded, totalBytes) => {
               const percent = totalBytes > 0 ? Math.round((bytesDownloaded / totalBytes) * 100) : 0;
+              
+              // Calculate Speed & ETA
+              const elapsedMs = Date.now() - startTime;
+              const speed = elapsedMs > 0 ? (bytesDownloaded / elapsedMs) * 1000 : 0;
+              const remainingBytes = totalBytes - bytesDownloaded;
+              const etaSeconds = speed > 0 ? remainingBytes / speed : Infinity;
+
+              const speedText = speed > 0 ? `${(speed / (1024 * 1024)).toFixed(2)} MB/s` : "0 B/s";
+              const etaText = etaSeconds === Infinity ? "Estimating..." : etaSeconds < 60 ? `${Math.round(etaSeconds)}s` : `${Math.floor(etaSeconds / 60)}m ${Math.round(etaSeconds % 60)}s`;
+
+              setTransferMetrics(prev => ({
+                ...prev,
+                [filename]: { speedText, etaText }
+              }));
+
               setDownloadProgress(prev => {
                 if (!prev[filename]) return prev;
                 return {
@@ -1654,6 +1769,8 @@ function DrivePageContent() {
       isShared
     };
 
+    let taskId: any = null;
+
     try {
       // Dynamic chunk sizing tailored for high-concurrency memory efficiency and parallel TCP socket saturation
       let CHUNK_SIZE = 8 * 1024 * 1024; // Default: 8MB
@@ -1773,6 +1890,15 @@ function DrivePageContent() {
       let lastProgressUpdateTime = 0;
       const THROTTLE_MS = 150; // Throttle React re-renders to prevent browser-thread choking
 
+      if (isCapacitor()) {
+        try {
+          const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
+          taskId = await BackgroundTask.beforeExit(async () => {});
+        } catch (err) {}
+      }
+
+      const startTime = Date.now();
+
       const triggerProgressUpdate = (force = false) => {
         const now = Date.now();
         if (force || now - lastProgressUpdateTime > THROTTLE_MS) {
@@ -1782,6 +1908,20 @@ function DrivePageContent() {
             99 // Keep at 99% max until completeMultipartUpload fully finishes and DB indexes
           );
 
+          // Calculate Speed & ETA
+          const elapsedMs = now - startTime;
+          const speed = elapsedMs > 0 ? (totalUploadedBytes / elapsedMs) * 1000 : 0;
+          const remainingBytes = file.size - totalUploadedBytes;
+          const etaSeconds = speed > 0 ? remainingBytes / speed : Infinity;
+
+          const speedText = speed > 0 ? `${(speed / (1024 * 1024)).toFixed(2)} MB/s` : "0 B/s";
+          const etaText = etaSeconds === Infinity ? "Estimating..." : etaSeconds < 60 ? `${Math.round(etaSeconds)}s` : `${Math.floor(etaSeconds / 60)}m ${Math.round(etaSeconds % 60)}s`;
+
+          setTransferMetrics((prev) => ({
+            ...prev,
+            [filename]: { speedText, etaText }
+          }));
+
           setUploadProgress((prev) => {
             if (prev[filename] === -1) return prev;
             if (prev[filename] === percent) return prev;
@@ -1790,6 +1930,20 @@ function DrivePageContent() {
               [filename]: percent
             };
           });
+
+          // Android Local Notification Progress update
+          if (isCapacitor()) {
+            import("@/lib/mobile-notifications").then(({ updateTransferNotification }) => {
+              updateTransferNotification({
+                key: filename,
+                title: filename,
+                type: "upload",
+                bytesTransferred: totalUploadedBytes,
+                totalBytes: file.size,
+              });
+            }).catch((err) => console.error("Notification update failed:", err));
+          }
+
           lastProgressUpdateTime = now;
         }
       };
@@ -1863,11 +2017,31 @@ function DrivePageContent() {
         return { ...prev, [filename]: 100 };
       });
 
+      if (isCapacitor()) {
+        try {
+          const { updateTransferNotification } = await import("@/lib/mobile-notifications");
+          await updateTransferNotification({
+            key: filename,
+            title: filename,
+            type: "upload",
+            bytesTransferred: file.size,
+            totalBytes: file.size,
+          });
+        } catch (err) {}
+      }
+
       return { success: true, r2Key, assetId };
 
     } catch (err: any) {
       const isAborted = err.name === "AbortError" || err.message === "canceled" || controller.signal.aborted;
       const details = uploadDetailsRef.current[filename];
+
+      if (isCapacitor()) {
+        try {
+          const { dismissTransferNotification } = await import("@/lib/mobile-notifications");
+          await dismissTransferNotification(filename);
+        } catch (e) {}
+      }
 
       if (isAborted) {
         if (details && details.uploadId) {
@@ -1893,6 +2067,12 @@ function DrivePageContent() {
       throw err;
     } finally {
       delete uploadDetailsRef.current[filename];
+      if (taskId && isCapacitor()) {
+        try {
+          const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
+          BackgroundTask.finish({ taskId });
+        } catch (err) {}
+      }
     }
   };
 
@@ -1906,6 +2086,13 @@ function DrivePageContent() {
       ...prev,
       [filename]: -1
     }));
+
+    if (isCapacitor()) {
+      try {
+        const { dismissTransferNotification } = await import("@/lib/mobile-notifications");
+        await dismissTransferNotification(filename);
+      } catch (e) {}
+    }
 
     if (details.uploadId) {
       try {
@@ -2111,6 +2298,7 @@ function DrivePageContent() {
           // Track progress bytes
           const progressTracker: { [part: number]: number } = {};
           let lastUpdateTime = 0;
+          const startTime = Date.now();
 
           // D. Invoke Native Upload
           const completedParts = await uploadFileNative({
@@ -2125,6 +2313,20 @@ function DrivePageContent() {
 
               const now = Date.now();
               if (now - lastUpdateTime > 150) {
+                // Calculate Speed & ETA
+                const elapsedMs = now - startTime;
+                const speed = elapsedMs > 0 ? (totalUploaded / elapsedMs) * 1000 : 0;
+                const remainingBytes = nativeFile.size - totalUploaded;
+                const etaSeconds = speed > 0 ? remainingBytes / speed : Infinity;
+
+                const speedText = speed > 0 ? `${(speed / (1024 * 1024)).toFixed(2)} MB/s` : "0 B/s";
+                const etaText = etaSeconds === Infinity ? "Estimating..." : etaSeconds < 60 ? `${Math.round(etaSeconds)}s` : `${Math.floor(etaSeconds / 60)}m ${Math.round(etaSeconds % 60)}s`;
+
+                setTransferMetrics(prev => ({
+                  ...prev,
+                  [filename]: { speedText, etaText }
+                }));
+
                 setUploadProgress((prev) => ({ ...prev, [filename]: percent }));
                 lastUpdateTime = now;
               }
@@ -3636,9 +3838,16 @@ function DrivePageContent() {
               return (
                 <div key={filename} className="upload-item">
                   <div className="upload-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <span className="upload-name" title={filename} style={{ flexGrow: 1, marginRight: '8px' }}>
-                      {filename}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, marginRight: '8px' }}>
+                      <span className="upload-name" title={filename} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        {filename}
+                      </span>
+                      {isUploading && transferMetrics[filename] && (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '2px' }}>
+                          {transferMetrics[filename].speedText} • {transferMetrics[filename].etaText}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       <span className="upload-status-text" style={{ 
                         fontSize: '12px', 
@@ -3713,9 +3922,16 @@ function DrivePageContent() {
                   <div className="upload-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexGrow: 1, minWidth: 0, marginRight: '8px' }}>
                       <Download size={14} style={{ color: 'var(--accent-indigo, #6366f1)', flexShrink: 0 }} />
-                      <span className="upload-name" title={filename} style={{ flexGrow: 1, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                        {filename}
-                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0 }}>
+                        <span className="upload-name" title={filename} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                          {filename}
+                        </span>
+                        {isDownloading && transferMetrics[filename] && (
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '2px' }}>
+                            {transferMetrics[filename].speedText} • {transferMetrics[filename].etaText}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                       <span className="upload-status-text" style={{ 
