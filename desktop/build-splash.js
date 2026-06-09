@@ -4,7 +4,7 @@ const path = require('path');
 const isProd = process.argv.includes('--prod') || process.argv.includes('--production');
 const envFile = isProd ? '.env.production' : '.env';
 let envPath = path.join(__dirname, '..', envFile);
-const templatePath = path.join(__dirname, 'dist/index.html.template');
+const templatePath = path.join(__dirname, 'index.html.template');
 const outputPath = path.join(__dirname, 'dist/index.html');
 
 console.log('[Build Splash] Running splash screen compiler...');
@@ -61,6 +61,7 @@ const templateContent = fs.readFileSync(templatePath, 'utf8');
 const finalContent = templateContent.replace('__APP_URL__', appUrl);
 
 // 3. Write output
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 fs.writeFileSync(outputPath, finalContent, 'utf8');
 console.log('[Build Splash] Successfully compiled and wrote splash loader to:', outputPath);
 process.exit(0);
