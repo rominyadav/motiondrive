@@ -243,6 +243,7 @@ export async function uploadFileNative(params: {
 export async function downloadFileNative(params: {
   url: string;
   filename: string;
+  knownSize?: number;
   onProgress: (bytesDownloaded: number, totalBytes: number) => void;
   signal?: AbortSignal;
 }): Promise<string | null> {
@@ -332,7 +333,11 @@ export async function downloadFileNative(params: {
       const response = await fetch(params.url, { signal: params.signal });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-      const totalBytes = Number(response.headers.get("content-length")) || 0;
+      let totalBytes = Number(response.headers.get("content-length")) || 0;
+      if (totalBytes === 0 && params.knownSize) {
+        totalBytes = params.knownSize;
+      }
+
       const reader = response.body?.getReader();
       if (!reader) throw new Error("ReadableStream is not supported on this response body.");
 
@@ -361,16 +366,24 @@ export async function downloadFileNative(params: {
         return window.btoa(binary);
       };
 
-      while (true) {
-        if (params.signal?.aborted) {
-          throw new DOMException("Download aborted", "AbortError");
+      // Buffer chunks to write in larger blocks (e.g. 2MB) to completely bypass native bridge IPC overhead
+      let bufferedChunks: Uint8Array[] = [];
+      let bufferedBytes = 0;
+      const BUFFER_LIMIT = 2 * 1024 * 1024; // 2MB
+
+      const flushBuffer = async () => {
+        if (bufferedChunks.length === 0) return;
+        
+        // Merge chunks
+        const merged = new Uint8Array(bufferedBytes);
+        let offset = 0;
+        for (const chunk of bufferedChunks) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
         }
 
-        const { done, value } = await reader.read();
-        if (done) break;
+        const base64Data = arrayBufferToBase64(merged);
 
-        const base64Data = arrayBufferToBase64(value);
-        
         if (firstWrite) {
           await Filesystem.writeFile({
             path: params.filename,
@@ -387,7 +400,25 @@ export async function downloadFileNative(params: {
           });
         }
 
+        bufferedChunks = [];
+        bufferedBytes = 0;
+      };
+
+      while (true) {
+        if (params.signal?.aborted) {
+          throw new DOMException("Download aborted", "AbortError");
+        }
+
+        const { done, value } = await reader.read();
+        if (done) {
+          await flushBuffer();
+          break;
+        }
+
+        bufferedChunks.push(value);
+        bufferedBytes += value.length;
         bytesDownloaded += value.length;
+
         params.onProgress(bytesDownloaded, totalBytes);
 
         // Update system tray progress notification (with speed & ETA)
@@ -398,6 +429,10 @@ export async function downloadFileNative(params: {
           bytesTransferred: bytesDownloaded,
           totalBytes,
         });
+
+        if (bufferedBytes >= BUFFER_LIMIT) {
+          await flushBuffer();
+        }
       }
 
       // Finalize notification as completed
