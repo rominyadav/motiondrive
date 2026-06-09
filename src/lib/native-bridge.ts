@@ -330,6 +330,19 @@ export async function downloadFileNative(params: {
       const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
       const { updateTransferNotification, dismissTransferNotification } = await import("./mobile-notifications");
 
+      // Check and request storage permissions if accessing public directories
+      try {
+        const permStatus = await Filesystem.checkPermissions();
+        if (permStatus.publicStorage !== "granted") {
+          const requestStatus = await Filesystem.requestPermissions();
+          if (requestStatus.publicStorage !== "granted") {
+            console.warn("[Native Bridge] Storage permission was not granted by user.");
+          }
+        }
+      } catch (err) {
+        console.error("[Native Bridge] Error checking/requesting storage permissions:", err);
+      }
+
       const response = await fetch(params.url, { signal: params.signal });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
