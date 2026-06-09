@@ -1533,8 +1533,15 @@ function DrivePageContent() {
     };
 
     try {
-      // 10MB Chunks
-      const CHUNK_SIZE = 10 * 1024 * 1024;
+      // Dynamic chunk sizing tailored for high-concurrency memory efficiency and parallel TCP socket saturation
+      let CHUNK_SIZE = 8 * 1024 * 1024; // Default: 8MB
+      if (file.size > 3 * 1024 * 1024 * 1024) {
+        CHUNK_SIZE = 32 * 1024 * 1024; // 32MB for files > 3GB
+      } else if (file.size > 1 * 1024 * 1024 * 1024) {
+        CHUNK_SIZE = 24 * 1024 * 1024; // 24MB for files 1GB - 3GB
+      } else if (file.size > 250 * 1024 * 1024) {
+        CHUNK_SIZE = 16 * 1024 * 1024; // 16MB for files 250MB - 1GB
+      }
       const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
       // A. Initiate upload with R2 via Next.js backend
@@ -1576,49 +1583,144 @@ function DrivePageContent() {
         throw new DOMException("Upload aborted", "AbortError");
       }
 
-      // C. Upload chunks to Cloudflare R2 directly in parallel batches
+      // Inline helper to upload a single chunk ArrayBuffer using XMLHttpRequest for precise progress reporting
+      const uploadChunk = (
+        presignedUrl: string,
+        chunkBuffer: ArrayBuffer,
+        index: number,
+        onProgress: (loaded: number) => void,
+        signal: AbortSignal
+      ): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          if (signal.aborted) {
+            reject(new DOMException("Upload aborted", "AbortError"));
+            return;
+          }
+
+          const xhr = new XMLHttpRequest();
+          xhr.open("PUT", presignedUrl);
+
+          // Handle abort signal
+          const abortHandler = () => {
+            xhr.abort();
+            reject(new DOMException("Upload aborted", "AbortError"));
+          };
+          signal.addEventListener("abort", abortHandler);
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              onProgress(event.loaded);
+            }
+          };
+
+          xhr.onload = () => {
+            signal.removeEventListener("abort", abortHandler);
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const etag = xhr.getResponseHeader("ETag");
+              if (etag) {
+                resolve(etag);
+              } else {
+                reject(new Error(`Etag missing from chunk ${index + 1}`));
+              }
+            } else {
+              reject(new Error(`Chunk ${index + 1} upload failed with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => {
+            signal.removeEventListener("abort", abortHandler);
+            reject(new Error(`Chunk ${index + 1} network error`));
+          };
+
+          xhr.onabort = () => {
+            signal.removeEventListener("abort", abortHandler);
+            reject(new DOMException("Upload aborted", "AbortError"));
+          };
+
+          xhr.send(chunkBuffer);
+        });
+      };
+
+      // C. Upload chunks directly using a highly concurrent sliding-window worker pool
       const parts: { PartNumber: number; ETag: string }[] = [];
-      const batchSize = 3; // Upload 3 chunks concurrently
+      let nextChunkIndex = 0;
+      const concurrency = 12; // Raised to 12 concurrent sockets to completely saturate high-speed lines
 
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += batchSize) {
-        if (controller.signal.aborted) {
-          throw new DOMException("Upload aborted", "AbortError");
+      // Track byte progress of all chunks
+      const chunkProgress = new Array(totalChunks).fill(0);
+      let lastProgressUpdateTime = 0;
+      const THROTTLE_MS = 150; // Throttle React re-renders to prevent browser-thread choking
+
+      const triggerProgressUpdate = (force = false) => {
+        const now = Date.now();
+        if (force || now - lastProgressUpdateTime > THROTTLE_MS) {
+          const totalUploadedBytes = chunkProgress.reduce((sum, val) => sum + val, 0);
+          const percent = Math.min(
+            Math.round((totalUploadedBytes / file.size) * 100),
+            99 // Keep at 99% max until completeMultipartUpload fully finishes and DB indexes
+          );
+
+          setUploadProgress((prev) => {
+            if (prev[filename] === -1) return prev;
+            if (prev[filename] === percent) return prev;
+            return {
+              ...prev,
+              [filename]: percent
+            };
+          });
+          lastProgressUpdateTime = now;
         }
+      };
 
-        const batch = [];
-        for (let b = 0; b < batchSize && chunkIndex + b < totalChunks; b++) {
-          const index = chunkIndex + b;
+      const worker = async () => {
+        while (true) {
+          if (controller.signal.aborted) {
+            throw new DOMException("Upload aborted", "AbortError");
+          }
+
+          const index = nextChunkIndex++;
+          if (index >= totalChunks) {
+            break;
+          }
+
           const start = index * CHUNK_SIZE;
           const end = Math.min(start + CHUNK_SIZE, file.size);
           const chunkSlice = file.slice(start, end);
           const presignedUrl = partUrls[index].url;
 
-          batch.push(
-            fetch(presignedUrl, {
-              method: "PUT",
-              body: chunkSlice,
-              signal: controller.signal
-            }).then(async (res) => {
-              if (!res.ok) throw new Error(`Chunk ${index + 1} upload failed`);
-              const etag = res.headers.get("ETag");
-              if (!etag) throw new Error(`Etag missing from chunk ${index + 1}`);
-              parts.push({ PartNumber: index + 1, ETag: etag });
-              
-              // Progress tracking
-              const completedPartsCount = parts.length;
-              setUploadProgress((prev) => {
-                // If already cancelled, do not overwrite progress
-                if (prev[filename] === -1) return prev;
-                return {
-                  ...prev,
-                  [filename]: Math.round((completedPartsCount / totalChunks) * 100)
-                };
-              });
-            })
-          );
+          try {
+            // Convert to ArrayBuffer in-memory first to completely bypass file-reading IPC bottlenecks during active socket transfer
+            const chunkBuffer = await chunkSlice.arrayBuffer();
+
+            const etag = await uploadChunk(
+              presignedUrl,
+              chunkBuffer,
+              index,
+              (loadedBytes) => {
+                chunkProgress[index] = loadedBytes;
+                triggerProgressUpdate();
+              },
+              controller.signal
+            );
+
+            parts.push({ PartNumber: index + 1, ETag: etag });
+
+            // Mark this chunk as fully loaded to guarantee accurate sum
+            chunkProgress[index] = end - start;
+            triggerProgressUpdate(true); // Force update upon chunk completion
+
+          } catch (err) {
+            throw err;
+          }
         }
-        await Promise.all(batch);
-      }
+      };
+
+      // Run multiple workers in parallel
+      const pool = Array.from({ length: Math.min(concurrency, totalChunks) }, () => worker());
+      await Promise.all(pool);
+
+      // S3/R2 multipart uploads require the parts list to be in ascending order of PartNumber
+      parts.sort((a, b) => a.PartNumber - b.PartNumber);
 
       if (controller.signal.aborted) {
         throw new DOMException("Upload aborted", "AbortError");
@@ -1631,6 +1733,12 @@ function DrivePageContent() {
         parts,
         assetId,
         isSharedDrive: isShared
+      });
+
+      // Set to 100 explicitly upon completion
+      setUploadProgress((prev) => {
+        if (prev[filename] === -1) return prev;
+        return { ...prev, [filename]: 100 };
       });
 
       return { success: true, r2Key, assetId };
