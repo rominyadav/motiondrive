@@ -137,6 +137,7 @@ export async function uploadFileNative(params: {
   parts: { partNumber: number; url: string }[];
   chunkSize: number;
   onProgress: (bytesSent: number, partNumber: number) => void;
+  signal?: AbortSignal;
 }): Promise<{ PartNumber: number; ETag: string }[]> {
   if (!isClient) throw new Error("Native code can only be executed on the client-side.");
 
@@ -146,23 +147,53 @@ export async function uploadFileNative(params: {
       const { invoke } = await import("@tauri-apps/api/core");
       const { listen } = await import("@tauri-apps/api/event");
 
+      if (params.signal?.aborted) {
+        throw new DOMException("Upload aborted", "AbortError");
+      }
+
       // Setup a listener for progress updates emitted by our Rust thread pool
       const unlisten = await listen<any>("upload-progress", (event) => {
         const { bytesSent, partNumber } = event.payload;
         params.onProgress(bytesSent, partNumber);
       });
 
-      try {
+      let abortHandler: (() => void) | null = null;
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (params.signal) {
+          abortHandler = async () => {
+            try {
+              // Asynchronously tell Rust backend to halt its threads for this file
+              await invoke("cancel_upload", { filePath: params.filePath });
+            } catch (err) {
+              console.error("[Native Bridge] cancel_upload invoke failed:", err);
+            }
+            reject(new DOMException("Upload aborted", "AbortError"));
+          };
+          params.signal.addEventListener("abort", abortHandler);
+        }
+      });
+
+      const uploadPromise = (async () => {
         const result = await invoke<any>("upload_file_native", {
           filePath: params.filePath,
           parts: params.parts,
           chunkSize: params.chunkSize,
         });
-
-        unlisten();
         return result; // Returns [{ PartNumber: X, ETag: "..." }, ...]
+      })();
+
+      try {
+        const result = await Promise.race([uploadPromise, abortPromise]);
+        unlisten();
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
+        return result;
       } catch (err) {
         unlisten();
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
         throw err;
       }
     } catch (err) {

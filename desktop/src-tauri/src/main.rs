@@ -2,11 +2,26 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Arc;
+use std::sync::{OnceLock, Mutex};
+use std::collections::HashSet;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 use tokio::sync::Semaphore;
 use serde::{Serialize, Deserialize};
 use tauri::{AppHandle, Emitter};
+
+fn canceled_uploads() -> &'static Mutex<HashSet<String>> {
+    static CANCELED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    CANCELED.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+#[tauri::command]
+fn cancel_upload(file_path: String) {
+    println!("[Native Uploader] Registering cancel command for path: {}", file_path);
+    if let Ok(mut canceled) = canceled_uploads().lock() {
+        canceled.insert(file_path);
+    }
+}
 
 // Structure representing an individual chunk's upload parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +85,11 @@ async fn upload_file_native(
 ) -> Result<Vec<UploadPartResponse>, String> {
     println!("[Native Uploader] Initiating upload for: {}", file_path);
 
+    // Reset any previous cancellation status for this file to allow clean re-upload
+    if let Ok(mut canceled) = canceled_uploads().lock() {
+        canceled.remove(&file_path);
+    }
+
     // Initialize high-performance HTTP client with optimized pool and keepalive
     let client = reqwest::Client::builder()
         .tcp_keepalive(std::time::Duration::from_secs(60))
@@ -95,8 +115,18 @@ async fn upload_file_native(
 
         // Spawn a green thread for each part upload
         let task = tokio::spawn(async move {
+            // Check cancellation before acquiring permit
+            if canceled_uploads().lock().map(|c| c.contains(&*file_path)).unwrap_or(false) {
+                return Err("Upload canceled by user".to_string());
+            }
+
             // Acquire concurrency permit
             let _permit = semaphore.acquire().await.unwrap();
+
+            // Check cancellation after acquiring permit
+            if canceled_uploads().lock().map(|c| c.contains(&*file_path)).unwrap_or(false) {
+                return Err("Upload canceled by user".to_string());
+            }
 
             // Calculate precise slice size for this chunk
             let file_size = std::fs::metadata(&*file_path)
@@ -125,6 +155,11 @@ async fn upload_file_native(
                 .map_err(|e| format!("Failed to read file slice: {}", e))?;
 
             let bytes_read = buffer.len();
+
+            // Check cancellation right before HTTP request
+            if canceled_uploads().lock().map(|c| c.contains(&*file_path)).unwrap_or(false) {
+                return Err("Upload canceled by user".to_string());
+            }
 
             println!(
                 "[Native Uploader] Starting upload for Part {}, Size: {} bytes",
@@ -202,7 +237,7 @@ async fn upload_file_native(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![upload_file_native, get_file_metadata])
+        .invoke_handler(tauri::generate_handler![upload_file_native, get_file_metadata, cancel_upload])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

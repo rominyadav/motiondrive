@@ -232,6 +232,7 @@ function DrivePageContent() {
       assetId: string;
       isShared: boolean;
       controller: AbortController;
+      filePath?: string;
     };
   }>({});
 
@@ -1910,7 +1911,21 @@ function DrivePageContent() {
         setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
         setUploadMinimized(false);
 
+        const controller = new AbortController();
+        uploadDetailsRef.current[filename] = {
+          controller,
+          uploadId: "",
+          r2Key: "",
+          assetId: "",
+          isShared,
+          filePath: nativeFile.path,
+        };
+
         try {
+          if (controller.signal.aborted) {
+            throw new DOMException("Upload aborted", "AbortError");
+          }
+
           // A. Calculate chunk size based on file size
           let CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
           if (nativeFile.size > 3 * 1024 * 1024 * 1024) {
@@ -1933,6 +1948,20 @@ function DrivePageContent() {
             prefix: basePrefix,
           });
 
+          if (controller.signal.aborted) {
+            throw new DOMException("Upload aborted", "AbortError");
+          }
+
+          // Update details with correct server IDs for proper abort handling
+          uploadDetailsRef.current[filename] = {
+            controller,
+            uploadId,
+            r2Key,
+            assetId,
+            isShared,
+            filePath: nativeFile.path,
+          };
+
           // C. Get Presigned PUT URLs from S3
           const partNumbers = Array.from({ length: totalChunks }, (_, index) => index + 1);
           const { partUrls } = await getPresignedPartUrls({
@@ -1941,6 +1970,10 @@ function DrivePageContent() {
             partNumbers,
             isSharedDrive: isShared,
           });
+
+          if (controller.signal.aborted) {
+            throw new DOMException("Upload aborted", "AbortError");
+          }
 
           // Prepare parts for the native uploader
           const nativeParts = partUrls.map((p) => ({
@@ -1957,6 +1990,7 @@ function DrivePageContent() {
             filePath: nativeFile.path,
             parts: nativeParts,
             chunkSize: CHUNK_SIZE,
+            signal: controller.signal,
             onProgress: (bytesSent, partNumber) => {
               progressTracker[partNumber] = bytesSent;
               const totalUploaded = Object.values(progressTracker).reduce((a, b) => a + b, 0);
@@ -1970,6 +2004,10 @@ function DrivePageContent() {
             },
           });
 
+          if (controller.signal.aborted) {
+            throw new DOMException("Upload aborted", "AbortError");
+          }
+
           // E. Complete multipart upload
           await completeMultipartUpload({
             uploadId,
@@ -1980,10 +2018,31 @@ function DrivePageContent() {
           });
 
           setUploadProgress((prev) => ({ ...prev, [filename]: 100 }));
-        } catch (fileErr) {
-          console.error("Native upload failed for " + filename, fileErr);
-          setUploadProgress((prev) => ({ ...prev, [filename]: -2 }));
-          showToast(`Failed to upload ${filename}`, "error");
+        } catch (fileErr: any) {
+          const isAborted = fileErr.name === "AbortError" || fileErr.message === "canceled" || controller.signal.aborted;
+          const details = uploadDetailsRef.current[filename];
+
+          if (isAborted) {
+            if (details && details.uploadId) {
+              try {
+                await abortMultipartUpload({
+                  uploadId: details.uploadId,
+                  r2Key: details.r2Key,
+                  assetId: details.assetId,
+                  isSharedDrive: details.isShared,
+                });
+              } catch (abortErr) {
+                console.error("Failed to clean up aborted upload on server:", abortErr);
+              }
+            }
+            setUploadProgress((prev) => ({ ...prev, [filename]: -1 }));
+          } else {
+            console.error("Native upload failed for " + filename, fileErr);
+            setUploadProgress((prev) => ({ ...prev, [filename]: -2 }));
+            showToast(`Failed to upload ${filename}`, "error");
+          }
+        } finally {
+          delete uploadDetailsRef.current[filename];
         }
       }
 
