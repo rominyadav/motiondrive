@@ -52,11 +52,25 @@ export default function LoginPage() {
         try {
           const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
           
-          const origin = window.location.origin;
-          const authUrl = `${origin}/api/auth/login/social/google?callbackURL=/`;
+          // Request the OAuth authorization URL from Better-Auth without triggering a page redirect
+          const res = await authClient.signIn.social({
+            provider: "google",
+            callbackURL: "/",
+            disableRedirect: true,
+          });
+
+          if (res?.error) {
+            throw new Error(res.error.message || "Failed to retrieve Google auth URL.");
+          }
+
+          if (!res?.data?.url) {
+            throw new Error("No redirect URL returned by Better-Auth.");
+          }
+
+          const authUrl = res.data.url;
           const label = "google-oauth-" + Date.now();
 
-          // Create secondary popup window
+          // Create secondary popup window loaded with Google's actual OAuth sign-in screen
           const win = new WebviewWindow(label, {
             url: authUrl,
             title: "Continue with Google",
@@ -99,7 +113,7 @@ export default function LoginPage() {
 
         } catch (err: any) {
           console.error("Google sign in popup error:", err);
-          setError("Failed to initialize Google login popup.");
+          setError(err?.message || "Failed to initialize Google login popup.");
           setGoogleLoading(false);
           if (intervalId) clearInterval(intervalId);
           if (windowInstance) {
