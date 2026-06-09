@@ -5,9 +5,20 @@
   "windows": [
     "*"
   ],
+  "remote": {
+    "urls": [
+      "http://localhost:3000",
+      "https://drive.motionsewa.com",
+      "https://*.motionsewa.com",
+      "https://motiondrive.vercel.app"
+    ]
+  },
   "permissions": [
     "core:path:default",
     "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:event:allow-emit",
     "core:window:default",
     "core:window:allow-create",
     "core:window:allow-close",
