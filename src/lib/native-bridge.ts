@@ -356,7 +356,7 @@ export async function downloadFileNative(params: {
       let downloadFinished = false;
       let resolveBackgroundTask: (() => void) | null = null;
       const backgroundTaskPromise = new Promise<void>((resolve) => {
-        resolveBackgroundTask = resolve;
+        resolveBackgroundTask = () => resolve();
       });
 
       let taskId: any = null;
@@ -486,7 +486,7 @@ export async function downloadFileNative(params: {
 
       } finally {
         downloadFinished = true;
-        resolveBackgroundTask?.();
+        (resolveBackgroundTask as any)?.();
 
         if (params.signal && abortHandler) {
           params.signal.removeEventListener("abort", abortHandler);

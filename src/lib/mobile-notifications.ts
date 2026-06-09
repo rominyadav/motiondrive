@@ -100,13 +100,13 @@ export async function updateTransferNotification(params: {
   const totalElapsedMs = now - item.startTime;
 
   // Calculate Average Speed
-  const avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
-  const percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
+  let avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
+  let percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
   const isComplete = params.bytesTransferred >= params.totalBytes;
 
   // Calculate ETA (seconds)
-  const remainingBytes = params.totalBytes - params.bytesTransferred;
-  const etaSeconds = avgSpeed > 0 ? remainingBytes / avgSpeed : Infinity;
+  let remainingBytes = params.totalBytes - params.bytesTransferred;
+  let etaSeconds = avgSpeed > 0 ? remainingBytes / avgSpeed : Infinity;
 
   // Segment progress into 5% buckets (0, 5, 10, ..., 95, 100) to keep native IPC overhead near zero.
   // We only trigger a native notification update when moving to a new 5% bucket.
@@ -130,14 +130,14 @@ export async function updateTransferNotification(params: {
   const speed = elapsedMs > 0 ? (bytesSinceLast / elapsedMs) * 1000 : 0;
   
   // Calculate Average Speed
-  const avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
+  avgSpeed = totalElapsedMs > 0 ? (params.bytesTransferred / totalElapsedMs) * 1000 : 0;
   const currentSpeed = speed > 0 ? speed : avgSpeed;
 
   // Calculate ETA (seconds)
-  const remainingBytes = params.totalBytes - params.bytesTransferred;
-  const etaSeconds = currentSpeed > 0 ? remainingBytes / currentSpeed : Infinity;
+  remainingBytes = params.totalBytes - params.bytesTransferred;
+  etaSeconds = currentSpeed > 0 ? remainingBytes / currentSpeed : Infinity;
 
-  const percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
+  percent = params.totalBytes > 0 ? Math.round((params.bytesTransferred / params.totalBytes) * 100) : 0;
 
   // Update tracking item
   item.bytesTransferred = params.bytesTransferred;
