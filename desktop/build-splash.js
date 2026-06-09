@@ -1,17 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 
-const envPath = path.join(__dirname, '../.env');
+const isProd = process.argv.includes('--prod') || process.argv.includes('--production');
+const envFile = isProd ? '.env.production' : '.env';
+let envPath = path.join(__dirname, '..', envFile);
 const templatePath = path.join(__dirname, 'dist/index.html.template');
 const outputPath = path.join(__dirname, 'dist/index.html');
 
 console.log('[Build Splash] Running splash screen compiler...');
+console.log(`[Build Splash] Running in ${isProd ? 'production' : 'development'} mode`);
 
-// 1. Read and parse .env file
+if (isProd && !fs.existsSync(envPath)) {
+  console.log(`[Build Splash] Warning: Production env file not found at ${envFile}, falling back to .env`);
+  envPath = path.join(__dirname, '../.env');
+}
+
+// 1. Read and parse environment file
 let appUrl = 'https://drive.motionsewa.com'; // Absolute safety fallback
 
 if (fs.existsSync(envPath)) {
-  console.log('[Build Splash] Found root .env file at:', envPath);
+  console.log('[Build Splash] Found environment file at:', envPath);
   const envContent = fs.readFileSync(envPath, 'utf8');
   
   // Parse lines to find NEXT_PUBLIC_APP_URL or BETTER_AUTH_URL
