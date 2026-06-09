@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Motionsewa Drive</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --fg: #fafafa;
+      --primary: #3b82f6;
+    }
+    body {
+      margin: 0;
+      background-color: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .loader {
+      text-align: center;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(59, 130, 246, 0.1);
+      border-radius: 50%;
+      border-top-color: var(--primary);
+      margin: 0 auto 1rem auto;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="loader">
+    <div class="spinner"></div>
+    <h3>Loading Motionsewa Drive</h3>
+  </div>
+  <script>
+    // Redirect to the live site immediately if we are online
+    const PRODUCTION_URL = "https://drive.motionsewa.com";
+    if (navigator.onLine) {
+      window.location.href = PRODUCTION_URL;
+    } else {
+      document.body.innerHTML = "<div class='loader'><h3>Offline</h3><p>Please check your internet connection.</p></div>";
+    }
+  </script>
+</body>
+</html>

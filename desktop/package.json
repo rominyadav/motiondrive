@@ -1,0 +1,16 @@
+{
+  "name": "motionsewa-drive-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "node build-splash.js && tauri dev",
+    "build": "node build-splash.js && tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

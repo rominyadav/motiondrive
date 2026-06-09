@@ -20,6 +20,37 @@
 # production
 /build
 
+# desktop app build output (Tauri/Cargo)
+/desktop/node_modules/
+/desktop/dist/
+/desktop/build/
+/desktop/out/
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/schemas/
+/desktop/**/*.exe
+/desktop/**/*.msi
+/desktop/**/*.dmg
+/desktop/**/*.pkg
+/desktop/**/*.AppImage
+/desktop/**/*.deb
+/desktop/**/*.rpm
+/desktop/**/*.app
+
+# mobile app build output (Capacitor/Android/iOS)
+/mobile/node_modules/
+/mobile/dist/
+/mobile/build/
+/mobile/out/
+/mobile/www/
+/mobile/android/.gradle/
+/mobile/android/**/build/
+/mobile/android/**/outputs/
+/mobile/ios/**/build/
+/mobile/ios/**/DerivedData/
+/mobile/**/*.apk
+/mobile/**/*.aab
+/mobile/**/*.ipa
+
 # misc
 .DS_Store
 *.pem

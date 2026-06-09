@@ -1,0 +1,12 @@
+{
+  "appId": "com.motionsewa.drive",
+  "appName": "Motionsewa Drive",
+  "webDir": "public",
+  "server": {
+    "url": "https://drive.motionsewa.com",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

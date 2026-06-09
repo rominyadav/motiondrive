@@ -36,6 +36,7 @@ import {
   getUserStorageStats,
   getUserDetailedUsageStats
 } from "@/app/actions/drive";
+import { isNativeApp, pickFilesNative, uploadFileNative } from "@/lib/native-bridge";
 import {
   createSharedLink,
   listMySharedLinks,
@@ -1890,12 +1891,123 @@ function DrivePageContent() {
     await refreshExplorerContents();
   };
 
-  const triggerFileSelect = () => {
-    fileInputRef.current?.click();
+  const handleNativeUploadFlow = async (options: { directory: boolean }) => {
+    try {
+      const nativeFiles = await pickFilesNative({
+        multiple: true,
+        directory: options.directory,
+      });
+
+      if (nativeFiles.length === 0) return;
+
+      setUploadActive(true);
+
+      const isShared = explorerMode === "shared";
+      const basePrefix = isShared ? (sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "") : "";
+
+      for (const nativeFile of nativeFiles) {
+        const filename = nativeFile.name;
+        setUploadProgress((prev) => ({ ...prev, [filename]: 0 }));
+        setUploadMinimized(false);
+
+        try {
+          // A. Calculate chunk size based on file size
+          let CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
+          if (nativeFile.size > 3 * 1024 * 1024 * 1024) {
+            CHUNK_SIZE = 32 * 1024 * 1024; // 32MB
+          } else if (nativeFile.size > 1 * 1024 * 1024 * 1024) {
+            CHUNK_SIZE = 24 * 1024 * 1024; // 24MB
+          } else if (nativeFile.size > 250 * 1024 * 1024) {
+            CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
+          }
+          const totalChunks = Math.ceil(nativeFile.size / CHUNK_SIZE) || 1;
+
+          // B. Initiate Upload on the Next.js server to get IDs and Bucket Key
+          const { uploadId, r2Key, assetId } = await initiateMultipartUpload({
+            filename: nativeFile.name,
+            mimeType: nativeFile.mimeType || "application/octet-stream",
+            size: nativeFile.size,
+            projectId: selectedProjectId,
+            folderId: currentFolderId,
+            isSharedDrive: isShared,
+            prefix: basePrefix,
+          });
+
+          // C. Get Presigned PUT URLs from S3
+          const partNumbers = Array.from({ length: totalChunks }, (_, index) => index + 1);
+          const { partUrls } = await getPresignedPartUrls({
+            uploadId,
+            r2Key,
+            partNumbers,
+            isSharedDrive: isShared,
+          });
+
+          // Prepare parts for the native uploader
+          const nativeParts = partUrls.map((p) => ({
+            partNumber: p.partNumber,
+            url: p.url,
+          }));
+
+          // Track progress bytes
+          const progressTracker: { [part: number]: number } = {};
+          let lastUpdateTime = 0;
+
+          // D. Invoke Native Upload
+          const completedParts = await uploadFileNative({
+            filePath: nativeFile.path,
+            parts: nativeParts,
+            chunkSize: CHUNK_SIZE,
+            onProgress: (bytesSent, partNumber) => {
+              progressTracker[partNumber] = bytesSent;
+              const totalUploaded = Object.values(progressTracker).reduce((a, b) => a + b, 0);
+              const percent = Math.min(Math.round((totalUploaded / nativeFile.size) * 100), 99);
+
+              const now = Date.now();
+              if (now - lastUpdateTime > 150) {
+                setUploadProgress((prev) => ({ ...prev, [filename]: percent }));
+                lastUpdateTime = now;
+              }
+            },
+          });
+
+          // E. Complete multipart upload
+          await completeMultipartUpload({
+            uploadId,
+            r2Key,
+            parts: completedParts,
+            assetId,
+            isSharedDrive: isShared,
+          });
+
+          setUploadProgress((prev) => ({ ...prev, [filename]: 100 }));
+        } catch (fileErr) {
+          console.error("Native upload failed for " + filename, fileErr);
+          setUploadProgress((prev) => ({ ...prev, [filename]: -2 }));
+          showToast(`Failed to upload ${filename}`, "error");
+        }
+      }
+
+      await refreshExplorerContents();
+    } catch (err) {
+      console.error("Native upload flow error:", err);
+      showToast("Native file picker or upload failed.", "error");
+    }
   };
 
-  const triggerFolderSelect = () => {
-    folderInputRef.current?.click();
+  const triggerFileSelect = async () => {
+    if (isNativeApp()) {
+      await handleNativeUploadFlow({ directory: false });
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const triggerFolderSelect = async () => {
+    if (isNativeApp()) {
+      await handleNativeUploadFlow({ directory: true });
+    } else {
+      folderInputRef.current?.click();
+    }
   };
 
   // ==========================================
