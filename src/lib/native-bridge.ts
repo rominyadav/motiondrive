@@ -13,7 +13,10 @@ const isClient = typeof window !== "undefined";
  */
 export function isNativeApp(): boolean {
   if (!isClient) return false;
-  return isTauri() || isCapacitor();
+  // Tauri (Desktop) uses native OS file picker and Rust parallel chunk uploader.
+  // Capacitor (Mobile) works perfectly out-of-the-box with standard HTML5 file inputs
+  // and the high-speed concurrent JavaScript chunk uploader.
+  return isTauri();
 }
 
 /**

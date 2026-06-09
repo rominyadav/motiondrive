@@ -3,7 +3,7 @@
   "appName": "Motionsewa Drive",
   "webDir": "public",
   "server": {
-    "url": "https://drive.motionsewa.com",
+    "url": "https://motiondrive.vercel.app",
     "cleartext": true
   },
   "android": {
