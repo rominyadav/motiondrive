@@ -345,6 +345,15 @@ export default function AdminPage() {
     );
   };
 
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (!+bytes) return "0 Bytes";
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ["Bytes", "KiB", "MiB", "GiB", "TiB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+  };
+
   return (
     <div className="admin-body">
       {/* HEADER */}
@@ -1047,6 +1056,187 @@ export default function AdminPage() {
                     </table>
                   </div>
                 </div>
+
+                {/* ALL DRIVE ITEMS DIRECTORY */}
+                {(() => {
+                  const filteredItems = (usageStats.allItems || []).filter((item: any) => {
+                    const matchesSearch = (item.filename || "").toLowerCase().includes(itemsSearchQuery.toLowerCase());
+                    const matchesDrive = itemsDriveFilter === "all" || item.driveType === itemsDriveFilter;
+                    return matchesSearch && matchesDrive;
+                  });
+
+                  return (
+                    <div className="panel-card" style={{ marginTop: "24px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", flexWrap: "wrap", gap: "16px" }}>
+                        <div>
+                          <h3 className="panel-card-title" style={{ margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                            <FileText size={18} style={{ color: "#06b6d4" }} />
+                            <span>All Drive Items Directory</span>
+                          </h3>
+                          <p style={{ fontSize: "0.8rem", color: "#71717a", marginTop: "4px" }}>
+                            Search, filter, and view details of all files stored across all personal, shared, and archive drives.
+                          </p>
+                        </div>
+
+                        {/* Search and Filters */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+                            <Search size={14} style={{ position: "absolute", left: "12px", color: "#71717a" }} />
+                            <input 
+                              type="text" 
+                              className="sleek-input" 
+                              style={{ paddingLeft: "32px", width: "240px", fontSize: "0.85rem" }}
+                              placeholder="Search items by name..." 
+                              value={itemsSearchQuery}
+                              onChange={(e) => setItemsSearchQuery(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="filter-pills" style={{ margin: 0 }}>
+                            <button 
+                              className={`filter-pill ${itemsDriveFilter === "all" ? "active" : ""}`}
+                              onClick={() => setItemsDriveFilter("all")}
+                            >
+                              All ({usageStats.allItems?.length || 0})
+                            </button>
+                            <button 
+                              className={`filter-pill ${itemsDriveFilter === "personal" ? "active" : ""}`}
+                              onClick={() => setItemsDriveFilter("personal")}
+                            >
+                              Personal ({usageStats.allItems?.filter((i: any) => i.driveType === "personal").length || 0})
+                            </button>
+                            <button 
+                              className={`filter-pill ${itemsDriveFilter === "shared" ? "active" : ""}`}
+                              onClick={() => setItemsDriveFilter("shared")}
+                            >
+                              Shared ({usageStats.allItems?.filter((i: any) => i.driveType === "shared").length || 0})
+                            </button>
+                            <button 
+                              className={`filter-pill ${itemsDriveFilter === "archive" ? "active" : ""}`}
+                              onClick={() => setItemsDriveFilter("archive")}
+                            >
+                              Archive ({usageStats.allItems?.filter((i: any) => i.driveType === "archive").length || 0})
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {filteredItems.length === 0 ? (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 0", gap: "12px", color: "#71717a" }}>
+                          <Info size={28} style={{ opacity: 0.6 }} />
+                          <p style={{ fontSize: "0.9rem", fontWeight: "500" }}>No items match your search or filter criteria.</p>
+                        </div>
+                      ) : (
+                        <div className="scrollable-table-container" style={{ maxHeight: "400px", overflowY: "auto" }}>
+                          <table className="modern-table">
+                            <thead>
+                              <tr>
+                                <th>Item Name</th>
+                                <th>Drive Type</th>
+                                <th>Uploader / Source</th>
+                                <th>Size</th>
+                                <th>Uploaded At</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredItems.map((item: any) => {
+                                // Dynamic File Type Icons
+                                let FileIcon = File;
+                                let iconColor = "#a1a1aa";
+                                if (item.mimeType?.startsWith("video/")) {
+                                  FileIcon = Video;
+                                  iconColor = "#38bdf8";
+                                } else if (item.mimeType?.startsWith("image/")) {
+                                  FileIcon = Image;
+                                  iconColor = "#10b981";
+                                } else if (item.mimeType?.startsWith("audio/")) {
+                                  FileIcon = Music;
+                                  iconColor = "#ec4899";
+                                } else if (item.mimeType === "application/pdf") {
+                                  FileIcon = FileText;
+                                  iconColor = "#f43f5e";
+                                }
+
+                                // Nice gradient badges for drive types
+                                let badgeStyle = {};
+                                if (item.driveType === "personal") {
+                                  badgeStyle = {
+                                    background: "linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(129, 140, 248, 0.05) 100%)",
+                                    border: "1px solid rgba(99, 102, 241, 0.2)",
+                                    color: "#a5b4fc"
+                                  };
+                                } else if (item.driveType === "shared") {
+                                  badgeStyle = {
+                                    background: "linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(52, 211, 153, 0.05) 100%)",
+                                    border: "1px solid rgba(16, 185, 129, 0.2)",
+                                    color: "#6ee7b7"
+                                  };
+                                } else if (item.driveType === "archive") {
+                                  badgeStyle = {
+                                    background: "linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(251, 191, 36, 0.05) 100%)",
+                                    border: "1px solid rgba(245, 158, 11, 0.2)",
+                                    color: "#fde047"
+                                  };
+                                }
+
+                                const sizeReadable = formatBytes(item.size);
+
+                                return (
+                                  <tr key={item.id}>
+                                    <td>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "10px", fontWeight: 500, color: "#e4e4e7" }} title={item.filename}>
+                                        <div style={{
+                                          width: "28px",
+                                          height: "28px",
+                                          borderRadius: "8px",
+                                          background: "rgba(255, 255, 255, 0.02)",
+                                          border: "1px solid rgba(255, 255, 255, 0.05)",
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          flexShrink: 0
+                                        }}>
+                                          <FileIcon size={14} style={{ color: iconColor }} />
+                                        </div>
+                                        <span style={{ 
+                                          maxWidth: "260px", 
+                                          overflow: "hidden", 
+                                          textOverflow: "ellipsis", 
+                                          whiteSpace: "nowrap" 
+                                        }}>
+                                          {item.filename.split("/").pop()}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <span className="soft-badge" style={{ ...badgeStyle, textTransform: "uppercase", fontSize: "0.7rem", fontWeight: "bold", padding: "4px 8px" }}>
+                                        {item.driveType}
+                                      </span>
+                                    </td>
+                                    <td>
+                                      <span style={{ fontSize: "0.85rem", color: item.uploadedBy.includes("System") ? "#71717a" : "#e4e4e7" }}>
+                                        {item.uploadedBy}
+                                      </span>
+                                    </td>
+                                    <td style={{ color: "#38bdf8", fontWeight: 500 }}>
+                                      {sizeReadable}
+                                    </td>
+                                    <td>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.8rem", color: "#71717a" }}>
+                                        <Clock size={12} />
+                                        <span>{new Date(item.uploadedAt).toLocaleString()}</span>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
