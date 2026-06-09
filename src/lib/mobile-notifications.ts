@@ -156,7 +156,6 @@ export async function updateTransferNotification(params: {
           title: `Finished ${params.type === "upload" ? "Uploading" : "Downloading"}`,
           body: `${item.title} completed!`,
           channelId: "transfer-progress",
-          schedule: { at: new Date(Date.now() + 50) },
           ongoing: false,
         },
       ],
@@ -171,7 +170,6 @@ export async function updateTransferNotification(params: {
           title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
           body: `${percent}% • ${speedText} • ETA: ${etaText}`,
           channelId: "transfer-progress",
-          schedule: { at: new Date(Date.now() + 50) },
           ongoing: true,
           extra: {
             progress: percent / 100, // custom progress bar for notification tray
