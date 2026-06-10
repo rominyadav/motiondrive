@@ -12,35 +12,38 @@ interface NotificationProgress {
 }
 
 const activeNotifications: { [key: string]: NotificationProgress } = {};
-let localNotificationsPlugin: any = null;
+let cachedPlugins: { local: any; progress: any } | null = null;
 
 // Throttled notification updates (max 2 updates per second per notification to prevent UI lag)
 const THROTTLE_MS = 600;
 
-async function getNotificationsPlugin() {
-  if (localNotificationsPlugin) return localNotificationsPlugin;
+async function getNotificationPlugins() {
+  if (cachedPlugins) return cachedPlugins;
   if (isCapacitor()) {
     try {
       const { LocalNotifications } = await import("@capacitor/local-notifications");
-      localNotificationsPlugin = LocalNotifications;
+      const { registerPlugin } = await import("@capacitor/core");
+      const ProgressNotification = registerPlugin<any>("ProgressNotification");
       
-      // Request permission upon first load
-      await localNotificationsPlugin.requestPermissions();
+      // Request permission via our custom progress plugin (which handles Manifest permission properly)
+      await ProgressNotification.requestPermissions().catch(() => {});
       
       // Create channel for progress updates
-      await localNotificationsPlugin.createChannel({
+      await LocalNotifications.createChannel({
         id: "transfer-progress",
         name: "Transfer Progress",
         description: "Shows active upload and download progress and speeds",
         importance: 3, // default importance
         sound: "silent", // prevent constant buzzing
         vibration: false,
-      });
+      }).catch(() => {});
+      
+      cachedPlugins = { local: LocalNotifications, progress: ProgressNotification };
     } catch (err) {
-      console.error("Failed to initialize LocalNotifications:", err);
+      console.error("Failed to initialize notification plugins:", err);
     }
   }
-  return localNotificationsPlugin;
+  return cachedPlugins || { local: null, progress: null };
 }
 
 /**
@@ -75,7 +78,7 @@ export async function updateTransferNotification(params: {
   bytesTransferred: number;
   totalBytes: number;
 }) {
-  const plugin = await getNotificationsPlugin();
+  const { local: plugin, progress: progressPlugin } = await getNotificationPlugins();
   if (!plugin) return;
 
   const now = Date.now();
@@ -149,6 +152,10 @@ export async function updateTransferNotification(params: {
 
   if (params.bytesTransferred >= params.totalBytes) {
     // Complete notification
+    if (progressPlugin) {
+      await progressPlugin.hideProgress({ id: item.id }).catch(() => {});
+    }
+
     await plugin.schedule({
       notifications: [
         {
@@ -163,20 +170,40 @@ export async function updateTransferNotification(params: {
     delete activeNotifications[params.key];
   } else {
     // Ongoing progress notification
-    await plugin.schedule({
-      notifications: [
-        {
+    let shownNatively = false;
+
+    if (progressPlugin) {
+      try {
+        await progressPlugin.showProgress({
           id: item.id,
           title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
-          body: `${percent}% • ${speedText} • ETA: ${etaText}`,
-          channelId: "transfer-progress",
-          ongoing: true,
-          extra: {
-            progress: percent / 100, // custom progress bar for notification tray
-          }
-        },
-      ],
-    });
+          text: `${percent}% • ${speedText} • ETA: ${etaText}`,
+          progress: percent,
+          max: 100,
+          indeterminate: false,
+        });
+        shownNatively = true;
+      } catch (err) {
+        console.error("Failed to show custom progress notification, falling back to local notifications:", err);
+      }
+    }
+
+    if (!shownNatively) {
+      await plugin.schedule({
+        notifications: [
+          {
+            id: item.id,
+            title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
+            body: `${percent}% • ${speedText} • ETA: ${etaText}`,
+            channelId: "transfer-progress",
+            ongoing: true,
+            extra: {
+              progress: percent / 100, // custom progress bar for notification tray
+            }
+          },
+        ],
+      });
+    }
   }
 
   return {
@@ -191,12 +218,17 @@ export async function updateTransferNotification(params: {
  * Dismiss a progress notification cleanly (e.g. upon user cancellation)
  */
 export async function dismissTransferNotification(key: string) {
-  const plugin = await getNotificationsPlugin();
+  const { local: plugin, progress: progressPlugin } = await getNotificationPlugins();
   const item = activeNotifications[key];
-  if (plugin && item) {
-    await plugin.cancel({
-      notifications: [{ id: item.id }],
-    });
+  if (item) {
+    if (progressPlugin) {
+      await progressPlugin.hideProgress({ id: item.id }).catch(() => {});
+    }
+    if (plugin) {
+      await plugin.cancel({
+        notifications: [{ id: item.id }],
+      }).catch(() => {});
+    }
     delete activeNotifications[key];
   }
 }

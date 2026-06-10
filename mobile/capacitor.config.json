@@ -3,10 +3,15 @@
   "appName": "Motionsewa Drive",
   "webDir": "public",
   "server": {
-    "url": "https://motiondrive.vercel.app",
+    "url": "http://10.0.2.2:3000",
     "cleartext": true
   },
   "android": {
     "allowMixedContent": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }
