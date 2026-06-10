@@ -36,7 +36,7 @@ import {
   getUserStorageStats,
   getUserDetailedUsageStats
 } from "@/app/actions/drive";
-import { isNativeApp, pickFilesNative, uploadFileNative, isCapacitor } from "@/lib/native-bridge";
+import { isNativeApp, pickFilesNative, uploadFileNative, isCapacitor, isTauri } from "@/lib/native-bridge";
 import {
   createSharedLink,
   listMySharedLinks,
@@ -2389,7 +2389,7 @@ function DrivePageContent() {
   };
 
   const triggerFileSelect = async () => {
-    if (isNativeApp()) {
+    if (isTauri()) {
       await handleNativeUploadFlow({ directory: false });
     } else {
       fileInputRef.current?.click();
@@ -2397,7 +2397,7 @@ function DrivePageContent() {
   };
 
   const triggerFolderSelect = async () => {
-    if (isNativeApp()) {
+    if (isTauri()) {
       await handleNativeUploadFlow({ directory: true });
     } else {
       folderInputRef.current?.click();
