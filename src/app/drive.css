@@ -454,6 +454,7 @@
   bottom: 24px;
   right: 24px;
   width: 360px;
+  max-width: calc(100vw - 48px);
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -499,7 +500,7 @@
 
 .upload-name {
   font-weight: 500;
-  max-width: 70%;
+  max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
