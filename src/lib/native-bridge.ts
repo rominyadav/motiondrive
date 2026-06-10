@@ -326,13 +326,34 @@ export async function downloadFileNative(params: {
   // B. CAPACITOR (ANDROID) DOWNLOAD IMPLEMENTATION
   if (isCapacitor()) {
     try {
+      const { Capacitor } = await import("@capacitor/core");
+      const platform = Capacitor.getPlatform();
+
+      if (platform === "android") {
+        const { registerPlugin } = await import("@capacitor/core");
+        const ProgressNotification = registerPlugin<any>("ProgressNotification");
+
+        const result = await ProgressNotification.downloadFile({
+          url: params.url,
+          filename: params.filename,
+        });
+
+        // Resolve progress to 100% since DownloadManager handles notifications/downloads in background
+        if (params.knownSize) {
+          params.onProgress(params.knownSize, params.knownSize);
+        } else {
+          params.onProgress(100, 100);
+        }
+
+        return result.path;
+      }
+
+      // iOS or fallback implementation
       const { Filesystem, Directory } = await import("@capacitor/filesystem");
       const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
       const { updateTransferNotification, dismissTransferNotification } = await import("./mobile-notifications");
-      const { Capacitor } = await import("@capacitor/core");
 
-      const platform = Capacitor.getPlatform();
-      const targetDirectory = platform === "android" ? Directory.External : Directory.Documents;
+      const targetDirectory = Directory.Documents;
 
       // Keep background task alive so OS doesn't freeze the WebView process completely
       let downloadFinished = false;
