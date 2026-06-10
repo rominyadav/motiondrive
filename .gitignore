@@ -51,6 +51,19 @@
 /mobile/**/*.aab
 /mobile/**/*.ipa
 
+# mobile local IDE files
+/mobile/.idea/caches/
+/mobile/.idea/workspace.xml
+/mobile/.idea/tasks.xml
+/mobile/.idea/gradle.xml
+/mobile/.idea/assetWizardSettings.xml
+/mobile/.idea/dictionaries/
+/mobile/.idea/libraries/
+/mobile/.idea/modules.xml
+/mobile/.idea/*.iml
+/mobile/.idea/misc.xml
+/mobile/.idea/vcs.xml
+
 # misc
 .DS_Store
 *.pem

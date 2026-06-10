@@ -3841,33 +3841,33 @@ function DrivePageContent() {
 
               return (
                 <div key={filename} className="upload-item">
-                  <div className="upload-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0, marginRight: '8px' }}>
-                      <span className="upload-name" title={filename} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                  <div className="upload-info" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0%', minWidth: 0 }}>
+                      <span className="upload-name" title={filename} style={{ fontSize: '13px', fontWeight: '600' }}>
                         {filename}
                       </span>
                       {isUploading && transferMetrics[filename] && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '2px' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '1px' }}>
                           {transferMetrics[filename].speedText} • {transferMetrics[filename].etaText}
                         </span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginTop: '2px' }}>
                       <span className="upload-status-text" style={{ 
-                        fontSize: '12px', 
-                        fontWeight: '500',
+                        fontSize: '11px',
+                        fontWeight: '700',
                         color: isCompleted 
                           ? 'var(--accent-success, #10b981)' 
                           : isCancelled 
                             ? 'var(--text-secondary)' 
                             : isFailed 
                               ? 'var(--accent-danger, #ef4444)' 
-                              : 'var(--text-secondary)'
+                              : 'var(--brand-accent)'
                       }}>
-                        {isCompleted && "Completed"}
-                        {isCancelled && "Cancelled"}
-                        {isFailed && "Failed"}
-                        {isUploading && (isBackgroundOp ? "In Progress" : `${progress}%`)}
+                        {isCompleted && "COMPLETED"}
+                        {isCancelled && "CANCELLED"}
+                        {isFailed && "FAILED"}
+                        {isUploading && (isBackgroundOp ? "WORKING..." : `${progress}%`)}
                       </span>
 
                       {isUploading && !isBackgroundOp && (
@@ -3875,7 +3875,7 @@ function DrivePageContent() {
                           onClick={() => handleCancelUpload(filename)}
                           className="btn-icon cancel-upload-btn"
                           style={{ 
-                            padding: '2px', 
+                            padding: '1px',
                             color: 'var(--text-muted)',
                             display: 'flex', 
                             alignItems: 'center', 
@@ -3923,35 +3923,35 @@ function DrivePageContent() {
 
               return (
                 <div key={filename} className="upload-item">
-                  <div className="upload-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexGrow: 1, minWidth: 0, marginRight: '8px' }}>
+                  <div className="upload-info" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 0%', minWidth: 0 }}>
                       <Download size={14} style={{ color: 'var(--accent-indigo, #6366f1)', flexShrink: 0 }} />
                       <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0 }}>
-                        <span className="upload-name" title={filename} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        <span className="upload-name" title={filename} style={{ fontSize: '13px', fontWeight: '600' }}>
                           {filename}
                         </span>
                         {isDownloading && transferMetrics[filename] && (
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '2px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '1px' }}>
                             {transferMetrics[filename].speedText} • {transferMetrics[filename].etaText}
                           </span>
                         )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginTop: '2px' }}>
                       <span className="upload-status-text" style={{ 
-                        fontSize: '12px', 
-                        fontWeight: '500',
+                        fontSize: '11px',
+                        fontWeight: '700',
                         color: isCompleted 
                           ? 'var(--accent-success, #10b981)' 
                           : isCancelled 
                             ? 'var(--text-secondary)' 
                             : isFailed 
                               ? 'var(--accent-danger, #ef4444)' 
-                              : 'var(--text-secondary)'
+                              : 'var(--accent-indigo)'
                       }}>
-                        {isCompleted && "Downloaded"}
-                        {isCancelled && "Cancelled"}
-                        {isFailed && "Failed"}
+                        {isCompleted && "DOWNLOADED"}
+                        {isCancelled && "CANCELLED"}
+                        {isFailed && "FAILED"}
                         {isDownloading && `${progress}%`}
                       </span>
 
@@ -3960,7 +3960,7 @@ function DrivePageContent() {
                           onClick={() => handleCancelDownload(filename)}
                           className="btn-icon cancel-upload-btn"
                           style={{ 
-                            padding: '2px', 
+                            padding: '1px',
                             color: 'var(--text-muted)',
                             display: 'flex', 
                             alignItems: 'center', 

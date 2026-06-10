@@ -177,7 +177,7 @@ export async function updateTransferNotification(params: {
         await progressPlugin.showProgress({
           id: item.id,
           title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
-          text: `${percent}% • ${speedText} • ETA: ${etaText}`,
+          text: `${speedText} • ETA: ${etaText}`,
           progress: percent,
           max: 100,
           indeterminate: false,
