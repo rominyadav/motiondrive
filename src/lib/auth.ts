@@ -5,6 +5,13 @@ import { resend } from "./resend";
 import { generateAndStoreOTP } from "@/app/actions/auth";
 
 export const auth = betterAuth({
+  trustedOrigins: [
+    "http://localhost:3000",
+    "http://10.0.2.2:3000",
+    "http://localhost",
+    "https://localhost",
+    "capacitor://localhost",
+  ],
   database: drizzleAdapter(db, {
     provider: "pg",
   }),
