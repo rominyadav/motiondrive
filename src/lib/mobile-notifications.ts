@@ -17,6 +17,18 @@ let localNotificationsPlugin: any = null;
 // Throttled notification updates (max 2 updates per second per notification to prevent UI lag)
 const THROTTLE_MS = 600;
 
+async function getProgressNotificationPlugin() {
+  if (isCapacitor()) {
+    try {
+      const { registerPlugin } = await import("@capacitor/core");
+      return registerPlugin<any>("ProgressNotification");
+    } catch (err) {
+      console.error("Failed to register ProgressNotification plugin:", err);
+    }
+  }
+  return null;
+}
+
 async function getNotificationsPlugin() {
   if (localNotificationsPlugin) return localNotificationsPlugin;
   if (isCapacitor()) {
@@ -24,8 +36,14 @@ async function getNotificationsPlugin() {
       const { LocalNotifications } = await import("@capacitor/local-notifications");
       localNotificationsPlugin = LocalNotifications;
       
-      // Request permission upon first load
-      await localNotificationsPlugin.requestPermissions();
+      const progressPlugin = await getProgressNotificationPlugin();
+      if (progressPlugin) {
+        // Request permission via our custom progress plugin (which handles Manifest permission properly)
+        await progressPlugin.requestPermissions();
+      } else {
+        // Fallback
+        await localNotificationsPlugin.requestPermissions();
+      }
       
       // Create channel for progress updates
       await localNotificationsPlugin.createChannel({
@@ -149,6 +167,11 @@ export async function updateTransferNotification(params: {
 
   if (params.bytesTransferred >= params.totalBytes) {
     // Complete notification
+    const progressPlugin = await getProgressNotificationPlugin();
+    if (progressPlugin) {
+      await progressPlugin.hideProgress({ id: item.id }).catch(() => {});
+    }
+
     await plugin.schedule({
       notifications: [
         {
@@ -163,20 +186,41 @@ export async function updateTransferNotification(params: {
     delete activeNotifications[params.key];
   } else {
     // Ongoing progress notification
-    await plugin.schedule({
-      notifications: [
-        {
+    const progressPlugin = await getProgressNotificationPlugin();
+    let shownNatively = false;
+
+    if (progressPlugin) {
+      try {
+        await progressPlugin.showProgress({
           id: item.id,
           title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
-          body: `${percent}% • ${speedText} • ETA: ${etaText}`,
-          channelId: "transfer-progress",
-          ongoing: true,
-          extra: {
-            progress: percent / 100, // custom progress bar for notification tray
-          }
-        },
-      ],
-    });
+          text: `${percent}% • ${speedText} • ETA: ${etaText}`,
+          progress: percent,
+          max: 100,
+          indeterminate: false,
+        });
+        shownNatively = true;
+      } catch (err) {
+        console.error("Failed to show custom progress notification, falling back to local notifications:", err);
+      }
+    }
+
+    if (!shownNatively) {
+      await plugin.schedule({
+        notifications: [
+          {
+            id: item.id,
+            title: `${params.type === "upload" ? "Uploading" : "Downloading"} ${item.title}`,
+            body: `${percent}% • ${speedText} • ETA: ${etaText}`,
+            channelId: "transfer-progress",
+            ongoing: true,
+            extra: {
+              progress: percent / 100, // custom progress bar for notification tray
+            }
+          },
+        ],
+      });
+    }
   }
 
   return {
@@ -193,10 +237,16 @@ export async function updateTransferNotification(params: {
 export async function dismissTransferNotification(key: string) {
   const plugin = await getNotificationsPlugin();
   const item = activeNotifications[key];
-  if (plugin && item) {
-    await plugin.cancel({
-      notifications: [{ id: item.id }],
-    });
+  if (item) {
+    const progressPlugin = await getProgressNotificationPlugin();
+    if (progressPlugin) {
+      await progressPlugin.hideProgress({ id: item.id }).catch(() => {});
+    }
+    if (plugin) {
+      await plugin.cancel({
+        notifications: [{ id: item.id }],
+      }).catch(() => {});
+    }
     delete activeNotifications[key];
   }
 }
