@@ -21,12 +21,20 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 
+import android.app.DownloadManager;
+import android.content.BroadcastReceiver;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.database.Cursor;
+import android.net.Uri;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -42,9 +50,53 @@ public class ProgressNotificationPlugin extends Plugin {
     private WifiManager.WifiLock wifiLock;
     private final ExecutorService executor = Executors.newCachedThreadPool();
 
+    private final Map<Long, PluginCall> activeDownloads = new ConcurrentHashMap<>();
+    private final Map<Long, String> downloadFilenames = new ConcurrentHashMap<>();
+    private DownloadManager downloadManager;
+
+    private final BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            long downloadId = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+            PluginCall call = activeDownloads.remove(downloadId);
+            String filename = downloadFilenames.remove(downloadId);
+            if (call != null && filename != null) {
+                DownloadManager.Query query = new DownloadManager.Query();
+                query.setFilterById(downloadId);
+                try (Cursor cursor = downloadManager.query(query)) {
+                    if (cursor != null && cursor.moveToFirst()) {
+                        int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                        int status = cursor.getInt(statusIndex);
+                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                            File destinationFile = new File(getContext().getExternalFilesDir(null), filename);
+                            JSObject ret = new JSObject();
+                            ret.put("path", destinationFile.getAbsolutePath());
+                            call.resolve(ret);
+                        } else {
+                            int reasonIndex = cursor.getColumnIndex(DownloadManager.COLUMN_REASON);
+                            int reason = cursor.getInt(reasonIndex);
+                            call.reject("Download failed with DownloadManager error code: " + reason);
+                        }
+                    } else {
+                        call.reject("Download completed but query was empty");
+                    }
+                } catch (Exception e) {
+                    call.reject("Error verifying download status: " + e.getMessage());
+                }
+            }
+        }
+    };
+
     @Override
     public void load() {
         createNotificationChannel();
+        downloadManager = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getContext().registerReceiver(downloadReceiver, filter, Context.RECEIVER_EXPORTED);
+        } else {
+            getContext().registerReceiver(downloadReceiver, filter);
+        }
     }
 
     private void createNotificationChannel() {
@@ -74,7 +126,7 @@ public class ProgressNotificationPlugin extends Plugin {
 
     /**
      * NATIVE DOWNLOAD METHOD
-     * This runs in a background thread and is immune to app minimization.
+     * This runs via Android's system DownloadManager and is completely immune to app minimization.
      */
     @PluginMethod
     public void downloadFile(PluginCall call) {
@@ -86,50 +138,24 @@ public class ProgressNotificationPlugin extends Plugin {
             return;
         }
 
-        executor.execute(() -> {
-            HttpURLConnection connection = null;
-            try {
-                acquireLocks();
-                URL url = new URL(urlString);
-                connection = (HttpURLConnection) url.openConnection();
-                connection.connect();
-
-                int fileLength = connection.getContentLength();
-                File file = new File(getContext().getExternalFilesDir(null), filename);
-                
-                try (InputStream input = new BufferedInputStream(connection.getInputStream(), 8192);
-                     FileOutputStream output = new FileOutputStream(file)) {
-
-                    byte[] data = new byte[8192];
-                    long total = 0;
-                    int count;
-                    long lastUpdate = 0;
-
-                    while ((count = input.read(data)) != -1) {
-                        total += count;
-                        output.write(data, 0, count);
-
-                        // Update notification every 300ms
-                        if (System.currentTimeMillis() - lastUpdate > 300) {
-                            int progress = (fileLength > 0) ? (int) (total * 100 / fileLength) : 0;
-                            updateNotificationInternal(filename, "Downloading...", progress, 100, 1001);
-                            lastUpdate = System.currentTimeMillis();
-                        }
-                    }
-                }
-                
-                NotificationManagerCompat.from(getContext()).cancel(1001);
-                JSObject ret = new JSObject();
-                ret.put("path", file.getAbsolutePath());
-                call.resolve(ret);
-
-            } catch (Exception e) {
-                call.reject(e.getMessage());
-            } finally {
-                if (connection != null) connection.disconnect();
-                releaseLocks();
+        try {
+            File destinationFile = new File(getContext().getExternalFilesDir(null), filename);
+            if (destinationFile.exists()) {
+                destinationFile.delete();
             }
-        });
+
+            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(urlString));
+            request.setTitle(filename);
+            request.setDescription("Downloading file...");
+            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalFilesDir(getContext(), null, filename);
+
+            long downloadId = downloadManager.enqueue(request);
+            activeDownloads.put(downloadId, call);
+            downloadFilenames.put(downloadId, filename);
+        } catch (Exception e) {
+            call.reject("Failed to enqueue download: " + e.getMessage());
+        }
     }
 
     private void updateNotificationInternal(String title, String text, int progress, int max, int id) {
