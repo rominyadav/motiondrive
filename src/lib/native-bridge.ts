@@ -332,27 +332,9 @@ export async function downloadFileNative(params: {
       const { Capacitor } = await import("@capacitor/core");
 
       const platform = Capacitor.getPlatform();
-      // On Android, Directory.Documents is a public directory which requires storage permissions
-      // (highly restricted / non-functional on Android 13+ under Scoped Storage).
-      // Directory.External points to the app's persistent external storage (Android/data/com.package/files)
-      // which requires ZERO permissions on any Android version.
-      // Additionally, Android's system DownloadManager (used by Filesystem.downloadFile) CANNOT write to app-private
-      // directories like Directory.External directly, which causes native hangs.
-      // Therefore, the only reliable way to download on Android 10+ is a standard JS fetch loop writing to Directory.External.
       const targetDirectory = platform === "android" ? Directory.External : Directory.Documents;
 
-      const response = await fetch(params.url, { signal: params.signal });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-      let totalBytes = Number(response.headers.get("content-length")) || 0;
-      if (totalBytes === 0 && params.knownSize) {
-        totalBytes = params.knownSize;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("ReadableStream is not supported on this response body.");
-
-      // Keep background task alive so OS doesn't freeze the WebView thread when device is locked/closed
+      // Keep background task alive so OS doesn't freeze the WebView process completely
       let downloadFinished = false;
       let resolveBackgroundTask: (() => void) | null = null;
       const backgroundTaskPromise = new Promise<void>((resolve) => {
@@ -383,107 +365,60 @@ export async function downloadFileNative(params: {
         params.signal.addEventListener("abort", abortHandler);
       }
 
-      let bytesDownloaded = 0;
-      let firstWrite = true;
-
-      // Helper to convert Uint8Array chunk to base64 string
-      const arrayBufferToBase64 = (buffer: Uint8Array): string => {
-        let binary = "";
-        const bytes = new Uint8Array(buffer);
-        const len = bytes.byteLength;
-        for (let i = 0; i < len; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        return window.btoa(binary);
-      };
-
-      // Buffer chunks to write in larger blocks (e.g. 512KB) to bypass native bridge IPC overhead
-      let bufferedChunks: Uint8Array[] = [];
-      let bufferedBytes = 0;
-      const BUFFER_LIMIT = 512 * 1024; // 512KB
-
-      const flushBuffer = async () => {
-        if (bufferedChunks.length === 0) return;
-        
-        // Merge chunks
-        const merged = new Uint8Array(bufferedBytes);
-        let offset = 0;
-        for (const chunk of bufferedChunks) {
-          merged.set(chunk, offset);
-          offset += chunk.length;
-        }
-
-        const base64Data = arrayBufferToBase64(merged);
-
-        if (firstWrite) {
-          await Filesystem.writeFile({
-            path: params.filename,
-            data: base64Data,
-            directory: targetDirectory,
-            recursive: true
-          });
-          firstWrite = false;
-        } else {
-          await Filesystem.appendFile({
-            path: params.filename,
-            data: base64Data,
-            directory: targetDirectory
-          });
-        }
-
-        bufferedChunks = [];
-        bufferedBytes = 0;
-      };
-
       // Throttle the progress updates slightly to keep UI fluid
       let lastProgressUpdate = 0;
-      const PROGRESS_THROTTLE_MS = 100;
+      const PROGRESS_THROTTLE_MS = 150;
+
+      // Listen for progress updates emitted by native Filesystem downloader
+      const progressListener = await Filesystem.addListener("progress", (progress) => {
+        const bytes = progress.bytes;
+        const total = progress.contentLength || params.knownSize || 0;
+
+        const now = Date.now();
+        if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || bytes === total) {
+          params.onProgress(bytes, total);
+          lastProgressUpdate = now;
+
+          // Update system tray progress notification asynchronously
+          updateTransferNotification({
+            key: params.filename,
+            title: params.filename,
+            type: "download",
+            bytesTransferred: bytes,
+            totalBytes: total,
+          }).catch(() => {});
+        }
+      });
 
       try {
-        while (true) {
-          if (params.signal?.aborted) {
-            throw new DOMException("Download aborted", "AbortError");
-          }
+        const downloadResult = await Filesystem.downloadFile({
+          url: params.url,
+          path: params.filename,
+          directory: targetDirectory,
+          progress: true,
+        });
 
-          const { done, value } = await reader.read();
-          if (done) {
-            await flushBuffer();
-            break;
-          }
+        progressListener.remove();
 
-          bufferedChunks.push(value);
-          bufferedBytes += value.length;
-          bytesDownloaded += value.length;
-
-          const now = Date.now();
-          if (now - lastProgressUpdate > PROGRESS_THROTTLE_MS || bytesDownloaded === totalBytes) {
-            params.onProgress(bytesDownloaded, totalBytes);
-            lastProgressUpdate = now;
-
-            // Update system tray progress notification asynchronously
-            updateTransferNotification({
-              key: params.filename,
-              title: params.filename,
-              type: "download",
-              bytesTransferred: bytesDownloaded,
-              totalBytes,
-            }).catch(() => {});
-          }
-
-          if (bufferedBytes >= BUFFER_LIMIT) {
-            await flushBuffer();
-          }
-        }
-
-        // Finalize notification as completed asynchronously
-        updateTransferNotification({
+        // Finalize notification as completed
+        const finalSize = params.knownSize || 0;
+        await updateTransferNotification({
           key: params.filename,
           title: params.filename,
           type: "download",
-          bytesTransferred: totalBytes,
-          totalBytes,
+          bytesTransferred: finalSize,
+          totalBytes: finalSize,
         }).catch(() => {});
 
+        const uriResult = await Filesystem.getUri({
+          path: params.filename,
+          directory: targetDirectory,
+        });
+        return uriResult.uri;
+
+      } catch (err) {
+        progressListener.remove();
+        throw err;
       } finally {
         downloadFinished = true;
         (resolveBackgroundTask as any)?.();
@@ -499,12 +434,6 @@ export async function downloadFileNative(params: {
           } catch (e) {}
         }
       }
-
-      const uriResult = await Filesystem.getUri({
-        path: params.filename,
-        directory: targetDirectory
-      });
-      return uriResult.uri;
     } catch (err) {
       try {
         const { dismissTransferNotification } = await import("./mobile-notifications");
