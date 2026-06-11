@@ -302,6 +302,20 @@ function DrivePageContent() {
   const [sharedProjsLimit, setSharedProjsLimit] = useState(5);
   const [archiveProjsLimit, setArchiveProjsLimit] = useState(5);
 
+  // Loading Trackers for Forms/Actions
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [isRenamingProject, setIsRenamingProject] = useState(false);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [isRenamingItem, setIsRenamingItem] = useState(false);
+  const [isSavingTextFile, setIsSavingTextFile] = useState(false);
+  const [isSavingDocsFile, setIsSavingDocsFile] = useState(false);
+  const [isSavingSheetFile, setIsSavingSheetFile] = useState(false);
+
+  // Optimistic Background Tasks
+  const [pendingDeleteIds, setPendingDeleteIds] = useState<Set<string>>(new Set());
+  const [pendingMoveIds, setPendingMoveIds] = useState<Set<string>>(new Set());
+
   // Unified Custom Confirm Modal State
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
@@ -903,6 +917,7 @@ function DrivePageContent() {
     const { item, type } = renameTarget;
     const nameInput = renameValue.trim();
 
+    setIsRenamingItem(true);
     try {
       if (explorerMode === "shared") {
         if (type === "file") {
@@ -935,12 +950,13 @@ function DrivePageContent() {
         }
       }
       await refreshExplorerContents();
+      setRenameModalOpen(false);
+      setRenameTarget(null);
     } catch (err) {
       showToast("Failed to rename target", "error");
       console.error(err);
     } finally {
-      setRenameModalOpen(false);
-      setRenameTarget(null);
+      setIsRenamingItem(false);
     }
   };
 
@@ -982,6 +998,7 @@ function DrivePageContent() {
     e.preventDefault();
     if (!newFolderName.trim()) return;
 
+    setIsCreatingFolder(true);
     try {
       if (explorerMode === "shared") {
         const prefix = sharedFolderPath.length > 0 ? sharedFolderPath.join("/") + "/" : "";
@@ -995,6 +1012,8 @@ function DrivePageContent() {
       showToast("Folder created successfully!", "success");
     } catch (err) {
       showToast("Failed to create folder", "error");
+    } finally {
+      setIsCreatingFolder(false);
     }
   };
 
@@ -1002,6 +1021,7 @@ function DrivePageContent() {
     e.preventDefault();
     if (!newProjectName.trim()) return;
 
+    setIsCreatingProject(true);
     try {
       const sharedValue = shareWithAll ? "all" : selectedUserIds.join(",");
       await createProject(newProjectName.trim(), newProjectClient.trim() || undefined, sharedValue);
@@ -1015,6 +1035,8 @@ function DrivePageContent() {
       showToast("Project created successfully!", "success");
     } catch (err) {
       showToast("Failed to create project", "error");
+    } finally {
+      setIsCreatingProject(false);
     }
   };
 
@@ -1022,6 +1044,7 @@ function DrivePageContent() {
     e.preventDefault();
     if (!selectedProjectToEdit || !editProjectName.trim()) return;
 
+    setIsRenamingProject(true);
     try {
       const sharedValue = editShareWithAll ? "all" : editSelectedUserIds.join(",");
       await renameProject(selectedProjectToEdit.id, editProjectName.trim(), editProjectClient.trim() || undefined, sharedValue);
@@ -1036,12 +1059,15 @@ function DrivePageContent() {
       showToast("Project updated successfully!", "success");
     } catch (err) {
       showToast("Failed to update project", "error");
+    } finally {
+      setIsRenamingProject(false);
     }
   };
 
   const handleDeleteProject = async () => {
     if (!selectedProjectToDelete) return;
 
+    setIsDeletingProject(true);
     try {
       await deleteProject(selectedProjectToDelete.id);
       setDeleteProjectModalOpen(false);
@@ -1056,6 +1082,8 @@ function DrivePageContent() {
       showToast("Project deleted successfully!", "success");
     } catch (err) {
       showToast("Failed to delete project", "error");
+    } finally {
+      setIsDeletingProject(false);
     }
   };
 
@@ -1284,7 +1312,6 @@ function DrivePageContent() {
   };
 
   // Delete File
-  // Delete File
   const handleDeleteFile = async (assetId: string) => {
     const targetBucketText = explorerMode === "shared" ? "shared Cloudflare R2 bucket (video-assets)" : "Web Drive and Cloudflare R2";
     const fileObj = driveData?.assets?.find((a: any) => a.id === assetId);
@@ -1307,6 +1334,12 @@ function DrivePageContent() {
           ...prev,
           [taskLabel]: 0
         }));
+
+        setPendingDeleteIds(prev => {
+          const next = new Set(prev);
+          next.add(assetId);
+          return next;
+        });
 
         // Fire and forget asynchronously
         (async () => {
@@ -1331,6 +1364,12 @@ function DrivePageContent() {
               [taskLabel]: -2
             }));
             showToast("Failed to delete file", "error");
+          } finally {
+            setPendingDeleteIds(prev => {
+              const next = new Set(prev);
+              next.delete(assetId);
+              return next;
+            });
           }
         })();
       }
@@ -1360,6 +1399,12 @@ function DrivePageContent() {
           [taskLabel]: 0
         }));
 
+        setPendingDeleteIds(prev => {
+          const next = new Set(prev);
+          next.add(folderId);
+          return next;
+        });
+
         // Fire and forget asynchronously
         (async () => {
           try {
@@ -1383,6 +1428,12 @@ function DrivePageContent() {
               [taskLabel]: -2
             }));
             showToast("Failed to delete folder", "error");
+          } finally {
+            setPendingDeleteIds(prev => {
+              const next = new Set(prev);
+              next.delete(folderId);
+              return next;
+            });
           }
         })();
       }
@@ -1488,6 +1539,13 @@ function DrivePageContent() {
           [taskLabel]: 0
         }));
 
+        setPendingDeleteIds(prev => {
+          const next = new Set(prev);
+          assetIdsToDelete.forEach(id => next.add(id));
+          folderIdsToDelete.forEach(id => next.add(id));
+          return next;
+        });
+
         // Clear selection immediately so user can continue using the drive
         handleClearSelection();
 
@@ -1515,6 +1573,13 @@ function DrivePageContent() {
               [taskLabel]: -2
             }));
             showToast("Failed to delete selected items", "error");
+          } finally {
+            setPendingDeleteIds(prev => {
+              const next = new Set(prev);
+              assetIdsToDelete.forEach(id => next.delete(id));
+              folderIdsToDelete.forEach(id => next.delete(id));
+              return next;
+            });
           }
         })();
       }
@@ -1692,6 +1757,14 @@ function DrivePageContent() {
 
     // Run in background asynchronously without blocking the UI
     (async () => {
+      // Add items to pending move set
+      setPendingMoveIds(prev => {
+        const next = new Set(prev);
+        assetIdsToMove.forEach(id => next.add(id));
+        folderIdsToMove.forEach(id => next.add(id));
+        return next;
+      });
+
       try {
         if (currentPickerAction === "move") {
           await bulkMoveItems({
@@ -1732,6 +1805,14 @@ function DrivePageContent() {
           ...prev,
           [taskLabel]: -2
         }));
+      } finally {
+        // Clear items from pending move set
+        setPendingMoveIds(prev => {
+          const next = new Set(prev);
+          assetIdsToMove.forEach(id => next.delete(id));
+          folderIdsToMove.forEach(id => next.delete(id));
+          return next;
+        });
       }
     })();
   };
@@ -2442,8 +2523,8 @@ function DrivePageContent() {
     e.preventDefault();
     if (!textFileName.trim()) return;
 
+    setIsSavingTextFile(true);
     setUploadActive(true);
-    setTextModalOpen(false);
 
     try {
       const file = new (window as any).File([textContent], textFileName, { type: "text/plain" });
@@ -2465,8 +2546,11 @@ function DrivePageContent() {
 
       await refreshExplorerContents();
       showToast("Text file saved successfully!", "success");
+      setTextModalOpen(false);
     } catch (err) {
       showToast("Failed to save text file", "error");
+    } finally {
+      setIsSavingTextFile(false);
     }
   };
 
@@ -2512,8 +2596,8 @@ function DrivePageContent() {
     e.preventDefault();
     if (!docTitle.trim() || !quillRef.current) return;
 
+    setIsSavingDocsFile(true);
     setUploadActive(true);
-    setDocsModalOpen(false);
 
     try {
       const htmlContent = quillRef.current.root.innerHTML;
@@ -2560,8 +2644,11 @@ function DrivePageContent() {
 
       await refreshExplorerContents();
       showToast("Document saved successfully!", "success");
+      setDocsModalOpen(false);
     } catch (err) {
       showToast("Failed to save Document", "error");
+    } finally {
+      setIsSavingDocsFile(false);
     }
   };
 
@@ -2604,8 +2691,8 @@ function DrivePageContent() {
     e.preventDefault();
     if (!sheetName.trim()) return;
 
+    setIsSavingSheetFile(true);
     setUploadActive(true);
-    setSheetModalOpen(false);
 
     try {
       const sheetData = {
@@ -2637,8 +2724,11 @@ function DrivePageContent() {
 
       await refreshExplorerContents();
       showToast("Sheet saved successfully!", "success");
+      setSheetModalOpen(false);
     } catch (err) {
       showToast("Failed to save Sheet", "error");
+    } finally {
+      setIsSavingSheetFile(false);
     }
   };
 
@@ -4075,14 +4165,20 @@ function DrivePageContent() {
                   onChange={(e) => setNewFolderName(e.target.value)}
                   required
                   autoFocus
+                  disabled={isCreatingFolder}
                 />
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setFolderModalOpen(false)} className="btn-secondary">
+                <button type="button" onClick={() => setFolderModalOpen(false)} className="btn-secondary" disabled={isCreatingFolder}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  Create Folder
+                <button type="submit" className="btn-primary" disabled={isCreatingFolder}>
+                  {isCreatingFolder ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
+                      Creating...
+                    </>
+                  ) : "Create Folder"}
                 </button>
               </div>
             </form>
@@ -4295,6 +4391,7 @@ function DrivePageContent() {
                   onChange={(e) => setNewProjectName(e.target.value)}
                   required
                   autoFocus
+                  disabled={isCreatingProject}
                 />
               </div>
 
@@ -4306,6 +4403,7 @@ function DrivePageContent() {
                   placeholder="e.g. Sony Entertainment"
                   value={newProjectClient}
                   onChange={(e) => setNewProjectClient(e.target.value)}
+                  disabled={isCreatingProject}
                 />
               </div>
 
@@ -4316,6 +4414,7 @@ function DrivePageContent() {
                     checked={shareWithAll}
                     onChange={(e) => setShareWithAll(e.target.checked)}
                     style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                    disabled={isCreatingProject}
                   />
                   <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
                 </label>
@@ -4363,6 +4462,7 @@ function DrivePageContent() {
                                 }
                               }}
                               style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                              disabled={isCreatingProject}
                             />
                             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                               <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
@@ -4389,11 +4489,16 @@ function DrivePageContent() {
               )}
 
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setProjectModalOpen(false)} className="btn-secondary">
+                <button type="button" onClick={() => setProjectModalOpen(false)} className="btn-secondary" disabled={isCreatingProject}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  Add Project
+                <button type="submit" className="btn-primary" disabled={isCreatingProject}>
+                  {isCreatingProject ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
+                      Adding...
+                    </>
+                  ) : "Add Project"}
                 </button>
               </div>
             </form>
@@ -4416,6 +4521,7 @@ function DrivePageContent() {
                   onChange={(e) => setEditProjectName(e.target.value)}
                   required
                   autoFocus
+                  disabled={isRenamingProject}
                 />
               </div>
 
@@ -4426,6 +4532,7 @@ function DrivePageContent() {
                   className="form-input" 
                   value={editProjectClient}
                   onChange={(e) => setEditProjectClient(e.target.value)}
+                  disabled={isRenamingProject}
                 />
               </div>
 
@@ -4436,6 +4543,7 @@ function DrivePageContent() {
                     checked={editShareWithAll}
                     onChange={(e) => setEditShareWithAll(e.target.checked)}
                     style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                    disabled={isRenamingProject}
                   />
                   <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
                 </label>
@@ -4483,6 +4591,7 @@ function DrivePageContent() {
                                 }
                               }}
                               style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
+                              disabled={isRenamingProject}
                             />
                             <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                               <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
@@ -4512,11 +4621,16 @@ function DrivePageContent() {
                 <button type="button" onClick={() => {
                   setRenameProjectModalOpen(false);
                   setSelectedProjectToEdit(null);
-                }} className="btn-secondary">
+                }} className="btn-secondary" disabled={isRenamingProject}>
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  Save Changes
+                <button type="submit" className="btn-primary" disabled={isRenamingProject}>
+                  {isRenamingProject ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
+                      Saving...
+                    </>
+                  ) : "Save Changes"}
                 </button>
               </div>
             </form>
@@ -4539,16 +4653,22 @@ function DrivePageContent() {
               <button type="button" onClick={() => {
                 setDeleteProjectModalOpen(false);
                 setSelectedProjectToDelete(null);
-              }} className="btn-secondary">
+              }} className="btn-secondary" disabled={isDeletingProject}>
                 Cancel
               </button>
               <button 
                 onClick={handleDeleteProject} 
                 className="btn-primary" 
-                style={{ backgroundColor: "var(--accent-destructive)" }}
+                style={{ backgroundColor: "var(--accent-destructive)", display: "flex", alignItems: "center" }}
                 autoFocus
+                disabled={isDeletingProject}
               >
-                Delete Permanently
+                {isDeletingProject ? (
+                  <>
+                    <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
+                    Deleting...
+                  </>
+                ) : "Delete Permanently"}
               </button>
             </div>
           </div>
@@ -4777,6 +4897,7 @@ function DrivePageContent() {
                   onChange={(e) => setRenameValue(e.target.value)}
                   required
                   autoFocus
+                  disabled={isRenamingItem}
                 />
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
@@ -4787,11 +4908,17 @@ function DrivePageContent() {
                     setRenameTarget(null);
                   }} 
                   className="btn-secondary"
+                  disabled={isRenamingItem}
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary">
-                  Save Changes
+                <button type="submit" className="btn-primary" disabled={isRenamingItem}>
+                  {isRenamingItem ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
+                      Saving...
+                    </>
+                  ) : "Save Changes"}
                 </button>
               </div>
             </form>
