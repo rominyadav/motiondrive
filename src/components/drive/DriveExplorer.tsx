@@ -114,6 +114,22 @@ interface DriveExplorerProps {
   revokeSharedLink: (id: string) => Promise<any>;
   refetchSharedLinks: () => void;
   showToast: (msg: string, type?: "info" | "success" | "error") => void;
+
+  // New optional props for operations animations & optimism
+  pendingDeleteIds?: Set<string>;
+  pendingMoveIds?: Set<string>;
+  isCreatingFolder?: boolean;
+  newFolderName?: string;
+  isSavingTextFile?: boolean;
+  textFileName?: string;
+  isSavingDocsFile?: boolean;
+  docTitle?: string;
+  isSavingSheetFile?: boolean;
+  sheetName?: string;
+  isRenamingProject?: boolean;
+  isDeletingProject?: boolean;
+  selectedProjectToEdit?: any;
+  selectedProjectToDelete?: any;
 }
 
 function formatBytes(bytes: number, decimals = 2) {
@@ -187,9 +203,85 @@ export function DriveExplorer({
   revokeSharedLink,
   refetchSharedLinks,
   showToast,
+
+  // New optional props for operations animations & optimism
+  pendingDeleteIds = new Set<string>(),
+  pendingMoveIds = new Set<string>(),
+  isCreatingFolder = false,
+  newFolderName = "",
+  isSavingTextFile = false,
+  textFileName = "",
+  isSavingDocsFile = false,
+  docTitle = "",
+  isSavingSheetFile = false,
+  sheetName = "",
+  isRenamingProject = false,
+  isDeletingProject = false,
+  selectedProjectToEdit = null,
+  selectedProjectToDelete = null,
 }: DriveExplorerProps) {
 
   const currentUserId = session?.user?.id;
+
+  // Support optimistic folder creation
+  let foldersToRender = [...filteredFolders];
+  if (isCreatingFolder) {
+    foldersToRender = [
+      {
+        id: "optimistic-folder-id",
+        name: newFolderName || "Creating Folder...",
+        userId: currentUserId,
+        isOptimistic: true,
+        createdAt: new Date().toISOString()
+      } as any,
+      ...foldersToRender
+    ];
+  }
+
+  // Support optimistic file creation
+  let assetsToRender = [...filteredAssets];
+  if (isSavingTextFile) {
+    assetsToRender = [
+      {
+        id: "optimistic-text-id",
+        filename: textFileName || "Untitled.txt",
+        size: 0,
+        r2Key: "",
+        uploadedBy: currentUserId,
+        isOptimistic: true,
+        createdAt: new Date().toISOString()
+      } as any,
+      ...assetsToRender
+    ];
+  }
+  if (isSavingDocsFile) {
+    assetsToRender = [
+      {
+        id: "optimistic-doc-id",
+        filename: docTitle ? (docTitle.toLowerCase().endsWith(".html") ? docTitle : `${docTitle}.html`) : "Untitled Document.html",
+        size: 0,
+        r2Key: "",
+        uploadedBy: currentUserId,
+        isOptimistic: true,
+        createdAt: new Date().toISOString()
+      } as any,
+      ...assetsToRender
+    ];
+  }
+  if (isSavingSheetFile) {
+    assetsToRender = [
+      {
+        id: "optimistic-sheet-id",
+        filename: sheetName ? (sheetName.toLowerCase().endsWith(".sheet.json") ? sheetName : `${sheetName}.sheet.json`) : "Untitled Sheet.sheet.json",
+        size: 0,
+        r2Key: "",
+        uploadedBy: currentUserId,
+        isOptimistic: true,
+        createdAt: new Date().toISOString()
+      } as any,
+      ...assetsToRender
+    ];
+  }
 
   return (
     <div className="explorer animate-fade-in">
@@ -264,6 +356,11 @@ export function DriveExplorer({
               : (folderPath[folderPath.length - 1]?.name || "My Drive")
             }
           </span>
+          {((isRenamingProject && selectedProjectToEdit?.id === selectedProjectId) || 
+            (isDeletingProject && selectedProjectToDelete?.id === selectedProjectId)) && (
+            <Loader2 className="animate-spin brand-accent animate-pulse-light" size={18} />
+          )}
+        </h2>
 
           {(() => {
             const currentOpenProject = explorerMode === "personal" && selectedProjectId 
@@ -373,7 +470,7 @@ export function DriveExplorer({
               </div>
             );
           })()}
-        </h2>
+        
         
         <div className="explorer-actions" ref={newDropdownRef as any}>
           {explorerMode !== "archive" && explorerMode !== "links" && (
@@ -617,7 +714,7 @@ export function DriveExplorer({
             </div>
           )}
         </div>
-      ) : filteredFolders.length === 0 && filteredAssets.length === 0 ? (
+      ) : foldersToRender.length === 0 && assetsToRender.length === 0 ? (
         /* EMPTY STATE VIEW */
         <div style={{ 
           display: "flex", 
@@ -678,40 +775,64 @@ export function DriveExplorer({
           </div>
 
           {/* FOLDERS LIST ROWS FIRST */}
-          {filteredFolders.map((folder) => {
+          {foldersToRender.map((folder) => {
             const isFolderSelected = selectedFolderIds.has(folder.id);
+            const isOptimistic = (folder as any).isOptimistic;
+            const isDeleting = pendingDeleteIds.has(folder.id);
+            const isMoving = pendingMoveIds.has(folder.id);
+
+            let rowClasses = `file-row ${isFolderSelected ? "selected" : ""}`;
+            if (isOptimistic) rowClasses += " optimistic-item animate-pulse-light animate-scale-in-item optimistic-glow";
+            if (isDeleting) rowClasses += " pending-delete animate-scale-out-item";
+            if (isMoving) rowClasses += " pending-move animate-pulse-light";
+
             return (
               <div 
                 key={folder.id} 
-                className={`file-row ${isFolderSelected ? "selected" : ""}`}
-                style={{ cursor: "pointer", gridTemplateColumns: "3fr 1.2fr 1.2fr 1fr" }}
+                className={rowClasses}
+                style={{ cursor: (isOptimistic || isDeleting || isMoving) ? "not-allowed" : "pointer", gridTemplateColumns: "3fr 1.2fr 1.2fr 1fr" }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
+                  if (isOptimistic || isDeleting || isMoving) return;
                   navigateToFolder(folder);
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (isOptimistic || isDeleting || isMoving) return;
                   navigateToFolder(folder);
                 }}
-                onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
+                onContextMenu={(e) => {
+                  if (isOptimistic || isDeleting || isMoving) return;
+                  handleContextMenu(e, folder, "folder");
+                }}
               >
                 <div className="file-info">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleFolderSelection(folder.id);
-                    }}
-                    className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
-                    title={isFolderSelected ? "Deselect folder" : "Select folder"}
-                  >
-                    {isFolderSelected ? (
-                      <CheckSquare size={16} className="brand-accent" />
-                    ) : (
-                      <Square size={16} className="checkbox-unselected" />
-                    )}
-                  </button>
-                  <Folder className="folder-icon" size={18} style={{ color: "var(--accent-indigo)" }} />
-                  <span className="file-name" title={folder.name}>{folder.name}</span>
+                  {!isOptimistic && !isDeleting && !isMoving ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleFolderSelection(folder.id);
+                      }}
+                      className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
+                      title={isFolderSelected ? "Deselect folder" : "Select folder"}
+                    >
+                      {isFolderSelected ? (
+                        <CheckSquare size={16} className="brand-accent" />
+                      ) : (
+                        <Square size={16} className="checkbox-unselected" />
+                      )}
+                    </button>
+                  ) : (
+                    <div style={{ width: "24px" }} />
+                  )}
+                  {isOptimistic || isDeleting || isMoving ? (
+                    <Loader2 className="animate-spin" size={18} style={{ color: isDeleting ? "var(--accent-red)" : "var(--accent-indigo)", marginRight: "10px" }} />
+                  ) : (
+                    <Folder className="folder-icon" size={18} style={{ color: "var(--accent-indigo)" }} />
+                  )}
+                  <span className="file-name" title={folder.name}>
+                    {isDeleting ? `Deleting "${folder.name}"...` : isMoving ? `Moving "${folder.name}"...` : folder.name}
+                  </span>
                 </div>
 
                 <div className="file-size">-</div>
@@ -719,7 +840,7 @@ export function DriveExplorer({
                 <div className="file-date">Folder</div>
 
                 <div className="file-actions">
-                  {(isAdmin || ('userId' in folder && folder.userId === currentUserId)) && explorerMode !== "archive" && (
+                  {!isOptimistic && !isDeleting && !isMoving && (isAdmin || ('userId' in folder && folder.userId === currentUserId)) && explorerMode !== "archive" && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -737,66 +858,93 @@ export function DriveExplorer({
           })}
 
           {/* FILES LIST ROWS NEXT */}
-          {filteredAssets.map((asset) => {
+          {assetsToRender.map((asset) => {
             const isAssetSelected = selectedAssetIds.has(asset.id);
+            const isOptimistic = (asset as any).isOptimistic;
+            const isDeleting = pendingDeleteIds.has(asset.id);
+            const isMoving = pendingMoveIds.has(asset.id);
+
+            let rowClasses = `file-row ${isAssetSelected ? "selected" : ""}`;
+            if (isOptimistic) rowClasses += " optimistic-item animate-pulse-light animate-scale-in-item optimistic-glow";
+            if (isDeleting) rowClasses += " pending-delete animate-scale-out-item";
+            if (isMoving) rowClasses += " pending-move animate-pulse-light";
+
             return (
               <div 
                 key={asset.id} 
-                className={`file-row ${isAssetSelected ? "selected" : ""}`}
-                onContextMenu={(e) => handleContextMenu(e, asset, "file")}
-                style={{ cursor: "pointer", gridTemplateColumns: "3fr 1.2fr 1.2fr 1fr" }}
+                className={rowClasses}
+                onContextMenu={(e) => {
+                  if (isOptimistic || isDeleting || isMoving) return;
+                  handleContextMenu(e, asset, "file");
+                }}
+                style={{ cursor: (isOptimistic || isDeleting || isMoving) ? "not-allowed" : "pointer", gridTemplateColumns: "3fr 1.2fr 1.2fr 1fr" }}
                 onDoubleClick={(e) => {
                   e.stopPropagation();
+                  if (isOptimistic || isDeleting || isMoving) return;
                   handleDownloadFile(asset.id);
                 }}
               >
                 <div className="file-info">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleAssetSelection(asset.id);
-                    }}
-                    className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
-                    title={isAssetSelected ? "Deselect file" : "Select file"}
-                  >
-                    {isAssetSelected ? (
-                      <CheckSquare size={16} className="brand-accent" />
-                    ) : (
-                      <Square size={16} className="checkbox-unselected" />
-                    )}
-                  </button>
-                  <File className="file-icon" size={18} style={{ color: "var(--accent-blue)" }} />
-                  <span className="file-name" title={asset.filename}>{asset.filename}</span>
+                  {!isOptimistic && !isDeleting && !isMoving ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleAssetSelection(asset.id);
+                      }}
+                      className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
+                      title={isAssetSelected ? "Deselect file" : "Select file"}
+                    >
+                      {isAssetSelected ? (
+                        <CheckSquare size={16} className="brand-accent" />
+                      ) : (
+                        <Square size={16} className="checkbox-unselected" />
+                      )}
+                    </button>
+                  ) : (
+                    <div style={{ width: "24px" }} />
+                  )}
+                  {isOptimistic || isDeleting || isMoving ? (
+                    <Loader2 className="animate-spin" size={18} style={{ color: isDeleting ? "var(--accent-red)" : "var(--accent-blue)", marginRight: "10px" }} />
+                  ) : (
+                    <File className="file-icon" size={18} style={{ color: "var(--accent-blue)" }} />
+                  )}
+                  <span className="file-name" title={asset.filename}>
+                    {isDeleting ? `Deleting "${asset.filename}"...` : isMoving ? `Moving "${asset.filename}"...` : asset.filename}
+                  </span>
                 </div>
 
-                <div className="file-size">{formatBytes(asset.size)}</div>
+                <div className="file-size">{isOptimistic ? "-" : formatBytes(asset.size)}</div>
 
                 <div className="file-date" title={asset.uploadedBy || "Creator"}>
                   {asset.uploadedBy || "Creator"}
                 </div>
 
                 <div className="file-actions">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownloadFile(asset.id);
-                    }} 
-                    className="btn-icon" 
-                    title="Download File"
-                  >
-                    <Download size={16} />
-                  </button>
-                  {(isAdmin || ('uploadedBy' in asset && asset.uploadedBy === currentUserId)) && explorerMode !== "archive" && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteFile(asset.id);
-                      }} 
-                      className="btn-icon delete" 
-                      title="Delete File"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                  {!isOptimistic && !isDeleting && !isMoving && (
+                    <>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownloadFile(asset.id);
+                        }} 
+                        className="btn-icon" 
+                        title="Download File"
+                      >
+                        <Download size={16} />
+                      </button>
+                      {(isAdmin || ('uploadedBy' in asset && asset.uploadedBy === currentUserId)) && explorerMode !== "archive" && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteFile(asset.id);
+                          }} 
+                          className="btn-icon delete" 
+                          title="Delete File"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -807,44 +955,67 @@ export function DriveExplorer({
         /* 2. VISUAL ICONS GRID VIEW */
         <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "12px" }}>
           {/* Folders Grid Section */}
-          {filteredFolders.length > 0 && (
+          {foldersToRender.length > 0 && (
             <div>
               <h3 style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-secondary)", margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.5px" }}>Folders</h3>
               <div className="folders-grid">
-                {filteredFolders.map((folder) => {
+                {foldersToRender.map((folder) => {
                   const isFolderSelected = selectedFolderIds.has(folder.id);
+                  const isOptimistic = (folder as any).isOptimistic;
+                  const isDeleting = pendingDeleteIds.has(folder.id);
+                  const isMoving = pendingMoveIds.has(folder.id);
+
+                  let cardClasses = `folder-card ${isFolderSelected ? "selected" : ""}`;
+                  if (isOptimistic) cardClasses += " optimistic-item animate-pulse-light animate-scale-in-item optimistic-glow";
+                  if (isDeleting) cardClasses += " pending-delete animate-scale-out-item";
+                  if (isMoving) cardClasses += " pending-move animate-pulse-light";
+
                   return (
                     <div 
                       key={folder.id} 
-                      className={`folder-card ${isFolderSelected ? "selected" : ""}`}
+                      className={cardClasses}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
+                        if (isOptimistic || isDeleting || isMoving) return;
                         navigateToFolder(folder);
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
+                        if (isOptimistic || isDeleting || isMoving) return;
                         navigateToFolder(folder);
                       }}
-                      onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
+                      onContextMenu={(e) => {
+                        if (isOptimistic || isDeleting || isMoving) return;
+                        handleContextMenu(e, folder, "folder");
+                      }}
+                      style={{ cursor: (isOptimistic || isDeleting || isMoving) ? "not-allowed" : "pointer" }}
                     >
                       <div className="folder-card-top">
-                        <Folder size={28} className="folder-icon" style={{ color: "var(--accent-indigo)" }} />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleFolderSelection(folder.id);
-                          }}
-                          className={`item-select-checkbox card-check ${isFolderSelected ? "selected" : ""}`}
-                        >
-                          {isFolderSelected ? (
-                            <CheckSquare size={16} className="brand-accent" />
-                          ) : (
-                            <Square size={16} className="checkbox-unselected" />
-                          )}
-                        </button>
+                        {isOptimistic || isDeleting || isMoving ? (
+                          <Loader2 size={28} className="animate-spin" style={{ color: isDeleting ? "var(--accent-red)" : "var(--accent-indigo)" }} />
+                        ) : (
+                          <Folder size={28} className="folder-icon" style={{ color: "var(--accent-indigo)" }} />
+                        )}
+                        {!isOptimistic && !isDeleting && !isMoving && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleFolderSelection(folder.id);
+                            }}
+                            className={`item-select-checkbox card-check ${isFolderSelected ? "selected" : ""}`}
+                          >
+                            {isFolderSelected ? (
+                              <CheckSquare size={16} className="brand-accent" />
+                            ) : (
+                              <Square size={16} className="checkbox-unselected" />
+                            )}
+                          </button>
+                        )}
                       </div>
                       <div className="folder-card-info">
-                        <span className="folder-card-name" title={folder.name}>{folder.name}</span>
+                        <span className="folder-card-name" title={folder.name}>
+                          {isDeleting ? `Deleting "${folder.name}"...` : isMoving ? `Moving "${folder.name}"...` : folder.name}
+                        </span>
                         <span className="folder-card-meta">Directory</span>
                       </div>
                     </div>
@@ -855,41 +1026,63 @@ export function DriveExplorer({
           )}
 
           {/* Files Grid Section */}
-          {filteredAssets.length > 0 && (
+          {assetsToRender.length > 0 && (
             <div>
               <h3 style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-secondary)", margin: "0 0 12px 0", textTransform: "uppercase", letterSpacing: "0.5px" }}>Files</h3>
               <div className="files-grid">
-                {filteredAssets.map((asset) => {
+                {assetsToRender.map((asset) => {
                   const isAssetSelected = selectedAssetIds.has(asset.id);
+                  const isOptimistic = (asset as any).isOptimistic;
+                  const isDeleting = pendingDeleteIds.has(asset.id);
+                  const isMoving = pendingMoveIds.has(asset.id);
+
+                  let cardClasses = `file-card ${isAssetSelected ? "selected" : ""}`;
+                  if (isOptimistic) cardClasses += " optimistic-item animate-pulse-light animate-scale-in-item optimistic-glow";
+                  if (isDeleting) cardClasses += " pending-delete animate-scale-out-item";
+                  if (isMoving) cardClasses += " pending-move animate-pulse-light";
+
                   return (
                     <div 
                       key={asset.id} 
-                      className={`file-card ${isAssetSelected ? "selected" : ""}`}
-                      onContextMenu={(e) => handleContextMenu(e, asset, "file")}
+                      className={cardClasses}
+                      onContextMenu={(e) => {
+                        if (isOptimistic || isDeleting || isMoving) return;
+                        handleContextMenu(e, asset, "file");
+                      }}
                       onDoubleClick={(e) => {
                         e.stopPropagation();
+                        if (isOptimistic || isDeleting || isMoving) return;
                         handleDownloadFile(asset.id);
                       }}
+                      style={{ cursor: (isOptimistic || isDeleting || isMoving) ? "not-allowed" : "pointer" }}
                     >
                       <div className="file-card-preview">
-                        <File size={36} style={{ color: "var(--accent-blue)" }} />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleAssetSelection(asset.id);
-                          }}
-                          className={`item-select-checkbox card-check ${isAssetSelected ? "selected" : ""}`}
-                        >
-                          {isAssetSelected ? (
-                            <CheckSquare size={16} className="brand-accent" />
-                          ) : (
-                            <Square size={16} className="checkbox-unselected" />
-                          )}
-                        </button>
+                        {isOptimistic || isDeleting || isMoving ? (
+                          <Loader2 size={36} className="animate-spin" style={{ color: isDeleting ? "var(--accent-red)" : "var(--accent-blue)" }} />
+                        ) : (
+                          <File size={36} style={{ color: "var(--accent-blue)" }} />
+                        )}
+                        {!isOptimistic && !isDeleting && !isMoving && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleAssetSelection(asset.id);
+                            }}
+                            className={`item-select-checkbox card-check ${isAssetSelected ? "selected" : ""}`}
+                          >
+                            {isAssetSelected ? (
+                              <CheckSquare size={16} className="brand-accent" />
+                            ) : (
+                              <Square size={16} className="checkbox-unselected" />
+                            )}
+                          </button>
+                        )}
                       </div>
                       <div className="file-card-info">
-                        <span className="file-card-name" title={asset.filename}>{asset.filename}</span>
-                        <span className="file-card-meta">{formatBytes(asset.size)}</span>
+                        <span className="file-card-name" title={asset.filename}>
+                          {isDeleting ? `Deleting "${asset.filename}"...` : isMoving ? `Moving "${asset.filename}"...` : asset.filename}
+                        </span>
+                        <span className="file-card-meta">{isOptimistic ? "Saving..." : formatBytes(asset.size)}</span>
                       </div>
                     </div>
                   );

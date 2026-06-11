@@ -13,7 +13,8 @@ import {
   ChevronDown,
   Folder,
   Edit2,
-  Trash2
+  Trash2,
+  Loader2
 } from "lucide-react";
 import { DriveMode, Project } from "@/types/drive";
 
@@ -58,6 +59,14 @@ interface SidebarProps {
   setSharedProjsLimit: (limit: number) => void;
   archiveProjsLimit: number;
   setArchiveProjsLimit: (limit: number) => void;
+
+  // New optional props for operations animations & optimism
+  isCreatingProject?: boolean;
+  newProjectName?: string;
+  isRenamingProject?: boolean;
+  selectedProjectToEdit?: any;
+  isDeletingProject?: boolean;
+  selectedProjectToDelete?: any;
 }
 
 export function Sidebar({
@@ -99,16 +108,41 @@ export function Sidebar({
   setSharedProjsLimit,
   archiveProjsLimit,
   setArchiveProjsLimit,
+
+  // Destructure new optional props
+  isCreatingProject = false,
+  newProjectName = "",
+  isRenamingProject = false,
+  selectedProjectToEdit = null,
+  isDeletingProject = false,
+  selectedProjectToDelete = null,
 }: SidebarProps) {
 
   // Helper to render individual project item in sidebar
   const renderProjectItem = (proj: any) => {
     const isActive = explorerMode === "personal" && selectedProjectId === proj.id;
+    const isOptimistic = proj.isOptimistic;
+    const isRenaming = proj.id === selectedProjectToEdit?.id && isRenamingProject;
+    const isDeleting = proj.id === selectedProjectToDelete?.id && isDeletingProject;
+
+    // Build the dynamic CSS classes
+    let itemClasses = `project-sidebar-item ${isActive ? "active" : ""}`;
+    if (isOptimistic) {
+      itemClasses += " optimistic-item animate-pulse-light";
+    }
+    if (isRenaming) {
+      itemClasses += " pending-move";
+    }
+    if (isDeleting) {
+      itemClasses += " pending-delete animate-scale-out-item";
+    }
+
     return (
       <div 
         key={proj.id}
-        className={`project-sidebar-item ${isActive ? "active" : ""}`}
+        className={itemClasses}
         onClick={() => {
+          if (isOptimistic || isRenaming || isDeleting) return;
           selectProject(proj.id, proj.name);
           setSidebarOpen(false);
         }}
@@ -120,49 +154,55 @@ export function Sidebar({
           alignItems: "center",
           justifyContent: "space-between",
           borderRadius: "8px",
-          cursor: "pointer",
+          cursor: (isOptimistic || isRenaming || isDeleting) ? "not-allowed" : "pointer",
           transition: "all 0.2s ease"
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
-          <Folder size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
+          {(isOptimistic || isRenaming || isDeleting) ? (
+            <Loader2 size={14} className="animate-spin" style={{ flexShrink: 0, color: isDeleting ? "var(--accent-red)" : "var(--accent-indigo)" }} />
+          ) : (
+            <Folder size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
+          )}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proj.name}</span>
         </div>
-        <div className="project-sidebar-item-actions">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedProjectToEdit(proj);
-              setEditProjectName(proj.name);
-              setEditProjectClient(proj.clientName || "");
-              
-              const shareAll = proj.sharedWith === "all" || !proj.sharedWith;
-              setEditShareWithAll(shareAll);
-              setEditSelectedUserIds(!shareAll && proj.sharedWith ? proj.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
-              
-              setRenameProjectModalOpen(true);
-            }}
-            className="btn-icon"
-            style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
-            title="Rename Project"
-          >
-            <Edit2 size={12} />
-          </button>
-          {(isAdmin || proj.userId === session?.user?.id) && (
+        {!isOptimistic && !isRenaming && !isDeleting && (
+          <div className="project-sidebar-item-actions">
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setSelectedProjectToDelete(proj);
-                setDeleteProjectModalOpen(true);
+                setSelectedProjectToEdit(proj);
+                setEditProjectName(proj.name);
+                setEditProjectClient(proj.clientName || "");
+                
+                const shareAll = proj.sharedWith === "all" || !proj.sharedWith;
+                setEditShareWithAll(shareAll);
+                setEditSelectedUserIds(!shareAll && proj.sharedWith ? proj.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+                
+                setRenameProjectModalOpen(true);
               }}
-              className="btn-icon delete"
+              className="btn-icon"
               style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
-              title="Delete Project"
+              title="Rename Project"
             >
-              <Trash2 size={12} />
+              <Edit2 size={12} />
             </button>
-          )}
-        </div>
+            {(isAdmin || proj.userId === session?.user?.id) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedProjectToDelete(proj);
+                  setDeleteProjectModalOpen(true);
+                }}
+                className="btn-icon delete"
+                style={{ padding: "4px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                title="Delete Project"
+              >
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -274,12 +314,26 @@ export function Sidebar({
 
   const currentUserId = session?.user?.id;
   
-  const yourProjects = (projects || []).filter(proj => {
+  let yourProjects = (projects || []).filter(proj => {
     const nameLower = (proj.name || "").toLowerCase();
     const clientLower = (proj.clientName || "").toLowerCase();
     const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
     return proj.userId === currentUserId && !isArchive;
   });
+
+  if (isCreatingProject) {
+    yourProjects = [
+      {
+        id: "optimistic-project",
+        name: newProjectName || "Creating Project...",
+        clientName: "",
+        userId: currentUserId,
+        isOptimistic: true,
+        createdAt: new Date()
+      },
+      ...yourProjects
+    ];
+  }
 
   const sharedProjects = (projects || []).filter(proj => {
     const nameLower = (proj.name || "").toLowerCase();

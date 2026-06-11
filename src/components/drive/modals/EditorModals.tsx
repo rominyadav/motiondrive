@@ -1,4 +1,5 @@
 import React from "react";
+import { Loader2 } from "lucide-react";
 
 // ==========================================
 // 1. PLAIN TEXT CREATOR / EDITOR MODAL
@@ -13,6 +14,7 @@ interface TextEditorModalProps {
   textContent: string;
   setTextContent: (v: string) => void;
   onSave: (e: React.FormEvent) => void;
+  isSaving?: boolean;
 }
 
 export function TextEditorModal({
@@ -24,6 +26,7 @@ export function TextEditorModal({
   textContent,
   setTextContent,
   onSave,
+  isSaving = false,
 }: TextEditorModalProps) {
   if (!isOpen) return null;
 
@@ -45,7 +48,7 @@ export function TextEditorModal({
               onChange={(e) => setTextFileName(e.target.value)}
               placeholder="e.g. notes.txt"
               required
-              disabled={textEditorMode === "edit"}
+              disabled={textEditorMode === "edit" || isSaving}
             />
           </div>
           <div className="form-group" style={{ margin: 0 }}>
@@ -65,6 +68,7 @@ export function TextEditorModal({
               onChange={(e) => setTextContent(e.target.value)}
               placeholder="Start typing your text here..."
               autoFocus
+              disabled={isSaving}
             />
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
@@ -72,11 +76,13 @@ export function TextEditorModal({
               type="button" 
               onClick={onClose} 
               className="btn-secondary"
+              disabled={isSaving}
             >
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
-              Save File
+            <button type="submit" className="btn-primary" disabled={isSaving} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {isSaving && <Loader2 className="animate-spin" size={14} />}
+              {isSaving ? "Saving File..." : "Save File"}
             </button>
           </div>
         </form>
@@ -97,6 +103,7 @@ interface DocsEditorModalProps {
   setDocTitle: (v: string) => void;
   editorContainerRef: React.RefObject<HTMLDivElement | null>;
   onSave: (e: React.FormEvent) => void;
+  isSaving?: boolean;
 }
 
 export function DocsEditorModal({
@@ -107,6 +114,7 @@ export function DocsEditorModal({
   setDocTitle,
   editorContainerRef,
   onSave,
+  isSaving = false,
 }: DocsEditorModalProps) {
   if (!isOpen) return null;
 
@@ -128,7 +136,7 @@ export function DocsEditorModal({
               onChange={(e) => setDocTitle(e.target.value)}
               placeholder="e.g. Project Proposal"
               required
-              disabled={docsEditorMode === "edit"}
+              disabled={docsEditorMode === "edit" || isSaving}
             />
           </div>
           
@@ -140,7 +148,10 @@ export function DocsEditorModal({
             overflow: "hidden",
             backgroundColor: "#fff",
             color: "#333",
-            borderRadius: "8px"
+            borderRadius: "8px",
+            pointerEvents: isSaving ? "none" : "auto",
+            opacity: isSaving ? 0.7 : 1,
+            transition: "opacity 0.2s ease"
           }} className="quill-editor-wrapper">
             <div ref={editorContainerRef as any} style={{ flex: 1, overflow: "auto" }} />
           </div>
@@ -150,11 +161,13 @@ export function DocsEditorModal({
               type="button" 
               onClick={onClose} 
               className="btn-secondary"
+              disabled={isSaving}
             >
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
-              Save Document
+            <button type="submit" className="btn-primary" disabled={isSaving} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {isSaving && <Loader2 className="animate-spin" size={14} />}
+              {isSaving ? "Saving Document..." : "Save Document"}
             </button>
           </div>
         </form>
@@ -176,6 +189,7 @@ interface SheetEditorModalProps {
   sheetCells: { [key: string]: string };
   onCellChange: (col: string, row: number, val: string) => void;
   onSave: (e: React.FormEvent) => void;
+  isSaving?: boolean;
 }
 
 export function SheetEditorModal({
@@ -187,6 +201,7 @@ export function SheetEditorModal({
   sheetCells,
   onCellChange,
   onSave,
+  isSaving = false,
 }: SheetEditorModalProps) {
   if (!isOpen) return null;
 
@@ -211,7 +226,7 @@ export function SheetEditorModal({
               onChange={(e) => setSheetName(e.target.value)}
               placeholder="e.g. Budget 2026"
               required
-              disabled={sheetEditorMode === "edit"}
+              disabled={sheetEditorMode === "edit" || isSaving}
             />
           </div>
           
@@ -220,7 +235,10 @@ export function SheetEditorModal({
             overflow: "auto",
             border: "1px solid var(--border-color)",
             borderRadius: "8px",
-            backgroundColor: "var(--bg-primary)"
+            backgroundColor: "var(--bg-primary)",
+            pointerEvents: isSaving ? "none" : "auto",
+            opacity: isSaving ? 0.75 : 1,
+            transition: "opacity 0.2s ease"
           }} className="sheet-grid-wrapper">
             <table className="spreadsheet-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
               <thead>
@@ -297,11 +315,13 @@ export function SheetEditorModal({
               type="button" 
               onClick={onClose} 
               className="btn-secondary"
+              disabled={isSaving}
             >
               Cancel
             </button>
-            <button type="submit" className="btn-primary">
-              Save Sheet
+            <button type="submit" className="btn-primary" disabled={isSaving} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {isSaving && <Loader2 className="animate-spin" size={14} />}
+              {isSaving ? "Saving Sheet..." : "Save Sheet"}
             </button>
           </div>
         </form>

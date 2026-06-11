@@ -22,6 +22,7 @@ export interface Project {
   userId?: string | null;
   sharedWith?: string | null; // "all" or comma-separated user IDs
   createdAt: string | Date;
+  isOptimistic?: boolean;
 }
 
 export interface Folder {
@@ -32,6 +33,7 @@ export interface Folder {
   name: string;
   createdAt?: string | Date;
   isR2Physical?: boolean;
+  isOptimistic?: boolean;
 }
 
 export interface Asset {
@@ -47,6 +49,7 @@ export interface Asset {
   deletedAt?: string | Date | null;
   status: string;
   isR2Physical?: boolean;
+  isOptimistic?: boolean;
 }
 
 export interface SharedLink {

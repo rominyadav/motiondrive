@@ -27,6 +27,7 @@ import {
   CheckCircle
 } from "lucide-react";
 import "./drive.css";
+import "./operations-animations.css";
 
 // Modular drive components
 import { Sidebar } from "@/components/drive/Sidebar";
@@ -252,7 +253,10 @@ function DrivePageContent() {
     handleSaveDocsFile,
     handleOpenSheetCreator,
     handleOpenSheetEditor,
-    handleSaveSheetFile
+    handleSaveSheetFile,
+    isSavingTextFile,
+    isSavingDocsFile,
+    isSavingSheetFile
   } = useDriveEditors({
     explorerMode,
     currentFolderId,
@@ -626,6 +630,13 @@ function DrivePageContent() {
         setSelectedProjectToDelete={setSelectedProjectToDelete}
         setDeleteProjectModalOpen={setDeleteProjectModalOpen}
 
+        isCreatingProject={isCreatingProject}
+        newProjectName={newProjectName}
+        isRenamingProject={isRenamingProject}
+        selectedProjectToEdit={selectedProjectToEdit}
+        isDeletingProject={isDeletingProject}
+        selectedProjectToDelete={selectedProjectToDelete}
+
         yourProjsExpanded={yourProjsExpanded}
         setYourProjsExpanded={setYourProjsExpanded}
         sharedProjsExpanded={sharedProjsExpanded}
@@ -662,6 +673,21 @@ function DrivePageContent() {
           session={session}
           isAdmin={isAdmin}
           contentsLoading={contentsLoading}
+
+          pendingDeleteIds={pendingDeleteIds}
+          pendingMoveIds={pendingMoveIds}
+          isCreatingFolder={isCreatingFolder}
+          newFolderName={newFolderName}
+          isSavingTextFile={isSavingTextFile}
+          textFileName={textFileName}
+          isSavingDocsFile={isSavingDocsFile}
+          docTitle={docTitle}
+          isSavingSheetFile={isSavingSheetFile}
+          sheetName={sheetName}
+          isRenamingProject={isRenamingProject}
+          isDeletingProject={isDeletingProject}
+          selectedProjectToEdit={selectedProjectToEdit}
+          selectedProjectToDelete={selectedProjectToDelete}
           sharedFolderPath={sharedFolderPath}
           archiveFolderPath={archiveFolderPath}
           sharedLinksList={sharedLinksList}
@@ -854,6 +880,7 @@ function DrivePageContent() {
         textContent={textContent}
         setTextContent={setTextContent}
         onSave={handleSaveTextFile}
+        isSaving={isSavingTextFile}
       />
 
       <DocsEditorModal
@@ -864,6 +891,7 @@ function DrivePageContent() {
         setDocTitle={setDocTitle}
         editorContainerRef={editorContainerRef}
         onSave={handleSaveDocsFile}
+        isSaving={isSavingDocsFile}
       />
 
       <SheetEditorModal
@@ -880,6 +908,7 @@ function DrivePageContent() {
           }));
         }}
         onSave={handleSaveSheetFile}
+        isSaving={isSavingSheetFile}
       />
 
       {renameModalOpen && renameTarget && (
