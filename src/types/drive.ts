@@ -20,7 +20,7 @@ export interface Project {
   name: string;
   clientName?: string | null;
   userId?: string | null;
-  sharedWith: string; // "all" or comma-separated user IDs
+  sharedWith?: string | null; // "all" or comma-separated user IDs
   createdAt: string | Date;
 }
 
@@ -30,21 +30,23 @@ export interface Folder {
   parentId?: string | null;
   userId?: string | null;
   name: string;
-  createdAt: string | Date;
+  createdAt?: string | Date;
+  isR2Physical?: boolean;
 }
 
 export interface Asset {
   id: string;
   folderId?: string | null;
   projectId?: string | null;
-  r2Key: string;
+  r2Key?: string;
   filename: string;
   size: number;
   mimeType: string;
   uploadedBy?: string | null;
   uploadedAt: string | Date;
   deletedAt?: string | Date | null;
-  status: "pending" | "uploading" | "completed" | "failed";
+  status: string;
+  isR2Physical?: boolean;
 }
 
 export interface SharedLink {

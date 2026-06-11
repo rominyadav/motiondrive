@@ -85,6 +85,21 @@ import {
 import Link from "next/link";
 import "./drive.css";
 
+// Modular drive components
+import { Sidebar } from "@/components/drive/Sidebar";
+import { Navbar } from "@/components/drive/Navbar";
+import { DriveExplorer } from "@/components/drive/DriveExplorer";
+import { TransferDrawer } from "@/components/drive/TransferDrawer";
+
+// Modular modal components
+import { ConfirmModal } from "@/components/drive/modals/ConfirmModal";
+import { DestinationPickerModal } from "@/components/drive/modals/DestinationPickerModal";
+import { PreviewModal } from "@/components/drive/modals/PreviewModal";
+import { FolderModal } from "@/components/drive/modals/FolderModal";
+import { DetailedUsageModal } from "@/components/drive/modals/DetailedUsageModal";
+import { CreateProjectModal, RenameProjectModal, DeleteProjectModal } from "@/components/drive/modals/ProjectModals";
+import { TextEditorModal, DocsEditorModal, SheetEditorModal } from "@/components/drive/modals/EditorModals";
+
 function DrivePageContent() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -1513,6 +1528,14 @@ function DrivePageContent() {
     }
   };
 
+  const handleBulkMove = () => {
+    handleOpenDestinationPicker("move");
+  };
+
+  const handleBulkCopy = () => {
+    handleOpenDestinationPicker("copy");
+  };
+
   // Execute bulk deletion
   const handleBulkDelete = async () => {
     const totalCount = selectedAssetIds.size + selectedFolderIds.size;
@@ -2854,2033 +2877,288 @@ function DrivePageContent() {
         <div className="sidebar-backdrop show" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* SIDEBAR NAVIGATION */}
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <div className="brand">
-          <LayoutGrid size={24} className="brand-accent" />
-          <span>Motionsewa <span className="brand-accent">Drive</span></span>
-        </div>
+      <Sidebar
+        session={session}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        explorerMode={explorerMode}
+        selectedProjectId={selectedProjectId}
+        selectProject={selectProject}
+        selectSharedDrive={selectSharedDrive}
+        selectArchiveDrive={selectArchiveDrive}
+        setParams={setParams}
+        setProjectModalOpen={setProjectModalOpen}
+        projects={projects}
+        isAdmin={isAdmin}
+        storageStats={storageStats}
+        setShowDetailedUsageModal={setShowDetailedUsageModal}
+        handleSignOut={handleSignOut}
+        
+        setSelectedProjectToEdit={setSelectedProjectToEdit}
+        setEditProjectName={setEditProjectName}
+        setEditProjectClient={setEditProjectClient}
+        setEditShareWithAll={setEditShareWithAll}
+        setEditSelectedUserIds={setEditSelectedUserIds}
+        setRenameProjectModalOpen={setRenameProjectModalOpen}
+        setSelectedProjectToDelete={setSelectedProjectToDelete}
+        setDeleteProjectModalOpen={setDeleteProjectModalOpen}
 
-        <nav className="nav-links">
-          <button 
-            onClick={() => {
-              selectProject(null, "My Drive");
-              setSidebarOpen(false);
-            }} 
-            className={`nav-link ${explorerMode === "personal" && selectedProjectId === null ? "active" : ""}`}
-          >
-            <LayoutGrid size={18} />
-            <span>My Drive</span>
-          </button>
+        yourProjsExpanded={yourProjsExpanded}
+        setYourProjsExpanded={setYourProjsExpanded}
+        sharedProjsExpanded={sharedProjsExpanded}
+        setSharedProjsExpanded={setSharedProjsExpanded}
+        archiveProjsExpanded={archiveProjsExpanded}
+        setArchiveProjsExpanded={setArchiveProjsExpanded}
 
-          <button 
-            onClick={() => {
-              selectSharedDrive();
-              setSidebarOpen(false);
-            }} 
-            className={`nav-link ${explorerMode === "shared" ? "active" : ""}`}
-          >
-            <Share2 size={18} />
-            <span>Shared Drive</span>
-          </button>
+        yourProjsLimit={yourProjsLimit}
+        setYourProjsLimit={setYourProjsLimit}
+        sharedProjsLimit={sharedProjsLimit}
+        setSharedProjsLimit={setSharedProjsLimit}
+        archiveProjsLimit={archiveProjsLimit}
+        setArchiveProjsLimit={setArchiveProjsLimit}
+      />
 
-          <button 
-            onClick={() => {
-              selectArchiveDrive();
-              setSidebarOpen(false);
-            }} 
-            className={`nav-link ${explorerMode === "archive" ? "active" : ""}`}
-          >
-            <Archive size={18} />
-            <span>Archive Drive</span>
-          </button>
-
-          <button 
-            onClick={() => {
-              setParams({ mode: "links", projectId: null, folderId: null, path: null });
-              setSidebarOpen(false);
-            }} 
-            className={`nav-link ${explorerMode === "links" ? "active" : ""}`}
-          >
-            <LinkIcon size={18} />
-            <span>Shared Links</span>
-          </button>
-
-          <div style={{ marginTop: "16px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", marginBottom: "12px" }}>
-              <span className="section-title" style={{ margin: 0, fontSize: "11px", letterSpacing: "0.05em", textTransform: "uppercase", opacity: 0.8 }}>Projects</span>
-              <button 
-                onClick={() => {
-                  setProjectModalOpen(true);
-                  setSidebarOpen(false);
-                }} 
-                title="New Project" 
-                className="btn-icon"
-              >
-                <Plus size={14} />
-              </button>
-            </div>
-
-            {(() => {
-              const currentUserId = session?.user?.id;
-              
-              const yourProjects = (projects || []).filter(proj => {
-                const nameLower = (proj.name || "").toLowerCase();
-                const clientLower = (proj.clientName || "").toLowerCase();
-                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
-                
-                // My Projects are owned by the current logged-in user
-                const isOwnedByMe = proj.userId === currentUserId;
-                return isOwnedByMe && !isArchive;
-              });
-
-              const sharedProjects = (projects || []).filter(proj => {
-                const nameLower = (proj.name || "").toLowerCase();
-                const clientLower = (proj.clientName || "").toLowerCase();
-                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
-                
-                // Shared Projects are owned by anyone else (or legacy projects with no owner)
-                const isOwnedByMe = proj.userId === currentUserId;
-                return !isOwnedByMe && !isArchive;
-              });
-
-              const archiveProjects = (projects || []).filter(proj => {
-                const nameLower = (proj.name || "").toLowerCase();
-                const clientLower = (proj.clientName || "").toLowerCase();
-                const isArchive = nameLower.includes("archive") || nameLower.includes("archived") || clientLower.includes("archive") || clientLower.includes("archived");
-                return isArchive;
-              });
-
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  {renderProjectSection(
-                    "My Projects",
-                    yourProjects,
-                    yourProjsExpanded,
-                    () => setYourProjsExpanded(!yourProjsExpanded),
-                    yourProjsLimit,
-                    setYourProjsLimit
-                  )}
-                  {renderProjectSection(
-                    "Shared Projects",
-                    sharedProjects,
-                    sharedProjsExpanded,
-                    () => setSharedProjsExpanded(!sharedProjsExpanded),
-                    sharedProjsLimit,
-                    setSharedProjsLimit
-                  )}
-                  {renderProjectSection(
-                    "Archive Projects",
-                    archiveProjects,
-                    archiveProjsExpanded,
-                    () => setArchiveProjsExpanded(!archiveProjsExpanded),
-                    archiveProjsLimit,
-                    setArchiveProjsLimit
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-
-          {isAdmin && (
-            <Link 
-              href="/admin" 
-              className="nav-link" 
-              style={{ marginTop: "24px" }}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <Sliders size={18} />
-              <span>Admin Panel</span>
-            </Link>
-          )}
-        </nav>
-
-        {/* Storage Indicator */}
-        {storageStats && (
-          <div style={{
-            padding: "16px 24px",
-            background: "rgba(255, 255, 255, 0.015)",
-            borderTop: "1px solid var(--border-color)",
-            borderBottom: "1px solid var(--border-color)",
-            borderLeft: "none",
-            borderRight: "none",
-            borderRadius: "0px",
-            margin: "12px 0 16px 0",
-            fontSize: "12px",
-            flexShrink: 0
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontWeight: "500" }}>
-              <span style={{ color: "var(--text-secondary)" }}>Storage</span>
-              <span style={{ color: "var(--text-primary)" }}>
-                {(storageStats.used / (1024 * 1024 * 1024)).toFixed(1)} GB / {(storageStats.limit / (1024 * 1024 * 1024)).toFixed(0)} GB
-              </span>
-            </div>
-            <div style={{
-              width: "100%",
-              height: "6px",
-              background: "rgba(255, 255, 255, 0.05)",
-              borderRadius: "9999px",
-              overflow: "hidden"
-            }}>
-              <div style={{
-                width: `${Math.min(100, (storageStats.used / storageStats.limit) * 100)}%`,
-                height: "100%",
-                background: "linear-gradient(90deg, var(--accent-blue), var(--accent-indigo))",
-                borderRadius: "9999px",
-                transition: "width 0.3s ease"
-              }} />
-            </div>
-            <div style={{ marginTop: "6px", fontSize: "10px", color: "var(--text-muted)", display: "flex", justifyContent: "space-between" }}>
-              <span>{((storageStats.used / storageStats.limit) * 100).toFixed(0)}% Used</span>
-              <span>{(storageStats.available / (1024 * 1024 * 1024)).toFixed(1)} GB Free</span>
-            </div>
-
-            <button 
-              onClick={() => setShowDetailedUsageModal(true)}
-              style={{
-                width: "100%",
-                background: "rgba(255, 255, 255, 0.03)",
-                border: "1px solid rgba(255, 255, 255, 0.06)",
-                borderRadius: "8px",
-                color: "#a1a1aa",
-                fontSize: "11px",
-                fontWeight: "600",
-                padding: "8px 12px",
-                marginTop: "14px",
-                cursor: "pointer",
-                transition: "all 0.2s ease",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "6px"
-              }}
-              className="usage-details-btn"
-            >
-              <Activity size={12} style={{ color: "var(--accent-blue)" }} />
-              <span>Storage Analytics</span>
-            </button>
-          </div>
-        )}
-
-        {/* User Card */}
-        <div className="sidebar-user">
-          <div className="user-avatar">{session.user.name?.charAt(0)}</div>
-          <div className="user-info">
-            <div className="user-name">{session.user.name}</div>
-            <div className="user-role">{(session.user as any).role}</div>
-          </div>
-          <button onClick={handleSignOut} className="btn-signout" title="Sign Out">
-            <LogOut size={16} />
-          </button>
-        </div>
-      </aside>
-
-      {/* MAIN CONTENT EXPLORER */}
       <main className="main-content">
-        {/* MOBILE TOP HEADER BAR */}
-        <div className="mobile-top-header">
-          <button 
-            onClick={() => setSidebarOpen(true)} 
-            className="mobile-menu-btn" 
-            title="Open Menu"
-          >
-            <Menu size={24} />
-          </button>
-          <div className="mobile-brand">
-            <LayoutGrid size={20} className="brand-accent" />
-            <span>Motionsewa <span className="brand-accent">Drive</span></span>
-          </div>
-          <div className="mobile-user-avatar">
-            {session?.user?.name?.charAt(0) || "U"}
-          </div>
-        </div>
+        <Navbar
+          session={session}
+          setSidebarOpen={setSidebarOpen}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          explorerMode={explorerMode}
+          viewMode={viewMode}
+          changeViewMode={changeViewMode}
+        />
 
-        <header className="header">
-          <div className="search-bar-container">
-            <Search size={18} />
-            <input 
-              type="text" 
-              className="search-input" 
-              placeholder="Search files in organization drive..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </header>
+        <DriveExplorer
+          explorerMode={explorerMode}
+          selectedProjectId={selectedProjectId}
+          currentFolderId={currentFolderId}
+          rawPath={rawPath}
+          folderPath={folderPath}
+          projects={projects}
+          session={session}
+          isAdmin={isAdmin}
+          contentsLoading={contentsLoading}
+          sharedFolderPath={sharedFolderPath}
+          archiveFolderPath={archiveFolderPath}
+          sharedLinksList={sharedLinksList}
+          sharedLinksLoading={sharedLinksLoading}
+          viewMode={viewMode}
+          searchQuery={searchQuery}
+          
+          newDropdownOpen={newDropdownOpen}
+          setNewDropdownOpen={setNewDropdownOpen}
+          newDropdownRef={newDropdownRef}
 
-        <div className="explorer animate-fade-in">
-          {/* Breadcrumb Path */}
-          <div className="breadcrumbs">
-            {explorerMode === "shared" ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span 
-                    className={`breadcrumb-item ${sharedFolderPath.length === 0 ? "active" : ""}`}
-                    onClick={() => handleBreadcrumbClickShared([])}
-                  >
-                    Shared Drive
-                  </span>
-                </div>
-                {sharedFolderPath.map((item, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <ChevronRight size={16} style={{ opacity: 0.5 }} />
-                    <span 
-                      className={`breadcrumb-item ${i === sharedFolderPath.length - 1 ? "active" : ""}`}
-                      onClick={() => handleBreadcrumbClickShared(sharedFolderPath.slice(0, i + 1))}
-                    >
-                      {item}
-                    </span>
-                  </div>
-                ))}
-              </>
-            ) : explorerMode === "archive" ? (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span 
-                    className={`breadcrumb-item ${archiveFolderPath.length === 0 ? "active" : ""}`}
-                    onClick={() => handleBreadcrumbClickArchive([])}
-                  >
-                    Archive Drive
-                  </span>
-                </div>
-                {archiveFolderPath.map((item, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <ChevronRight size={16} style={{ opacity: 0.5 }} />
-                    <span 
-                      className={`breadcrumb-item ${i === archiveFolderPath.length - 1 ? "active" : ""}`}
-                      onClick={() => handleBreadcrumbClickArchive(archiveFolderPath.slice(0, i + 1))}
-                    >
-                      {item}
-                    </span>
-                  </div>
-                ))}
-              </>
-            ) : (
-              folderPath.map((item, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {i > 0 && <ChevronRight size={16} style={{ opacity: 0.5 }} />}
-                  <span 
-                    className={`breadcrumb-item ${i === folderPath.length - 1 ? "active" : ""}`}
-                    onClick={() => handleBreadcrumbClick(i)}
-                  >
-                    {item.name}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
+          projectHeaderMenuOpen={projectHeaderMenuOpen}
+          setProjectHeaderMenuOpen={setProjectHeaderMenuOpen}
+          projectHeaderRef={projectHeaderRef}
 
-          <div className="explorer-header">
-            <h2 className="explorer-title" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-              <span>
-                {explorerMode === "shared" 
-                  ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
-                  : explorerMode === "archive"
-                  ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
-                  : (folderPath[folderPath.length - 1]?.name || "My Drive")
-                }
-              </span>
+          selectedAssetIds={selectedAssetIds}
+          selectedFolderIds={selectedFolderIds}
+          handleToggleAssetSelection={handleToggleAssetSelection}
+          handleToggleFolderSelection={handleToggleFolderSelection}
+          isAllSelected={isAllSelected()}
+          handleSelectAll={handleSelectAll}
+          handleClearSelection={handleClearSelection}
 
-              {(() => {
-                const currentOpenProject = explorerMode === "personal" && selectedProjectId 
-                  ? projects.find((p: any) => p.id === selectedProjectId)
-                  : null;
-                
-                if (!currentOpenProject) return null;
+          filteredFolders={filteredFolders}
+          filteredAssets={filteredAssets}
 
-                return (
-                  <div ref={projectHeaderRef} style={{ position: "relative", display: "inline-flex" }}>
-                    <button
-                      onClick={() => setProjectHeaderMenuOpen(!projectHeaderMenuOpen)}
-                      className="btn-icon"
-                      style={{
-                        padding: "6px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        borderRadius: "8px",
-                        background: "rgba(255, 255, 255, 0.05)",
-                        border: "1px solid rgba(255, 255, 255, 0.1)",
-                        cursor: "pointer",
-                        color: "rgba(255, 255, 255, 0.8)",
-                        transition: "all 0.2s"
-                      }}
-                      title="Project Actions"
-                    >
-                      <MoreVertical size={16} />
-                    </button>
+          handleBreadcrumbClick={handleBreadcrumbClick}
+          handleBreadcrumbClickShared={handleBreadcrumbClickShared}
+          handleBreadcrumbClickArchive={handleBreadcrumbClickArchive}
+          navigateToFolder={navigateToFolder}
 
-                    {projectHeaderMenuOpen && (
-                      <div 
-                        className="new-dropdown-menu animate-scale-up" 
-                        style={{ 
-                          right: "auto", 
-                          left: 0, 
-                          top: "100%", 
-                          marginTop: "8px", 
-                          zIndex: 100,
-                          minWidth: "200px"
-                        }}
-                      >
-                        <button 
-                          onClick={() => {
-                            setSelectedProjectToEdit(currentOpenProject);
-                            setEditProjectName(currentOpenProject.name);
-                            setEditProjectClient(currentOpenProject.clientName || "");
-                            
-                            const shareAll = currentOpenProject.sharedWith === "all" || !currentOpenProject.sharedWith;
-                            setEditShareWithAll(shareAll);
-                            setEditSelectedUserIds(!shareAll && currentOpenProject.sharedWith ? currentOpenProject.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
-                            
-                            setRenameProjectModalOpen(true);
-                            setProjectHeaderMenuOpen(false);
-                          }}
-                          className="dropdown-item"
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "8px",
-                            width: "100%",
-                            padding: "10px 14px",
-                            background: "none",
-                            border: "none",
-                            color: "var(--text-primary)",
-                            textAlign: "left",
-                            cursor: "pointer",
-                            fontSize: "13px",
-                            borderRadius: "4px",
-                            transition: "background 0.2s"
-                          }}
-                        >
-                          <Edit2 size={14} />
-                          <span>Rename / Edit Project</span>
-                        </button>
-                        
-                        {(isAdmin || currentOpenProject?.userId === session?.user?.id) && (
-                          <button 
-                            onClick={() => {
-                              setSelectedProjectToDelete(currentOpenProject);
-                              setDeleteProjectModalOpen(true);
-                              setProjectHeaderMenuOpen(false);
-                            }}
-                            className="dropdown-item"
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: "8px",
-                              width: "100%",
-                              padding: "10px 14px",
-                              background: "none",
-                              border: "none",
-                              color: "#ff4d4d",
-                              textAlign: "left",
-                              cursor: "pointer",
-                              fontSize: "13px",
-                              borderRadius: "4px",
-                              transition: "background 0.2s"
-                            }}
-                          >
-                            <Trash2 size={14} style={{ color: "#ff4d4d" }} />
-                            <span>Delete Project</span>
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </h2>
-            <div className="explorer-actions" ref={newDropdownRef}>
-              {explorerMode !== "links" && (
-                <div className="view-mode-toggle">
-                  <button
-                    onClick={() => changeViewMode("table")}
-                    className={`toggle-btn ${viewMode === "table" ? "active" : ""}`}
-                    title="Table View"
-                  >
-                    <List size={18} />
-                  </button>
-                  <button
-                    onClick={() => changeViewMode("icons")}
-                    className={`toggle-btn ${viewMode === "icons" ? "active" : ""}`}
-                    title="Icons View"
-                  >
-                    <LayoutGrid size={18} />
-                  </button>
-                </div>
-              )}
+          setSelectedProjectToEdit={setSelectedProjectToEdit}
+          setEditProjectName={setEditProjectName}
+          setEditProjectClient={setEditProjectClient}
+          setEditShareWithAll={setEditShareWithAll}
+          setEditSelectedUserIds={setEditSelectedUserIds}
+          setRenameProjectModalOpen={setRenameProjectModalOpen}
+          setSelectedProjectToDelete={setSelectedProjectToDelete}
+          setDeleteProjectModalOpen={setDeleteProjectModalOpen}
 
-              {explorerMode !== "archive" && explorerMode !== "links" && (
-                <div style={{ position: "relative" }}>
-                  <button 
-                    onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
-                    className="btn-primary"
-                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px" }}
-                  >
-                    <Plus size={18} />
-                    <span>New</span>
-                    <ChevronDown size={14} style={{ opacity: 0.8 }} />
-                  </button>
+          setFolderModalOpen={setFolderModalOpen}
 
-                  {newDropdownOpen && (
-                    <div className="new-dropdown-menu animate-scale-up">
-                      <button 
-                        onClick={() => {
-                          setFolderModalOpen(true);
-                          setNewDropdownOpen(false);
-                        }} 
-                        className="dropdown-item"
-                      >
-                        <FolderPlus size={16} />
-                        <span>New Folder</span>
-                      </button>
-                      
-                      <button 
-                        onClick={() => {
-                          handleOpenTextCreator();
-                          setNewDropdownOpen(false);
-                        }} 
-                        className="dropdown-item"
-                      >
-                        <FileText size={16} />
-                        <span>Create Text File</span>
-                      </button>
+          handleOpenTextCreator={handleOpenTextCreator}
+          handleOpenDocsCreator={handleOpenDocsCreator}
+          handleOpenSheetCreator={handleOpenSheetCreator}
 
-                      <button 
-                        onClick={() => {
-                          handleOpenDocsCreator();
-                          setNewDropdownOpen(false);
-                        }} 
-                        className="dropdown-item"
-                      >
-                        <FileText size={16} style={{ color: "var(--accent-indigo)" }} />
-                        <span>Docs (Rich Document)</span>
-                      </button>
+          fileInputRef={fileInputRef}
+          folderInputRef={folderInputRef}
+          triggerFileSelect={triggerFileSelect}
+          triggerFolderSelect={triggerFolderSelect}
 
-                      <button 
-                        onClick={() => {
-                          handleOpenSheetCreator();
-                          setNewDropdownOpen(false);
-                        }} 
-                        className="dropdown-item"
-                      >
-                        <Table size={16} style={{ color: "var(--accent-success, #10b981)" }} />
-                        <span>Blank Sheet</span>
-                      </button>
+          handleDeleteFolder={handleDeleteFolder}
+          handleDeleteFile={handleDeleteFile}
+          handleDownloadFile={handleDownloadFile}
+          handleContextMenu={handleContextMenu}
 
-                      <hr className="dropdown-divider" />
+          handleBulkDelete={handleBulkDelete}
+          handleBulkMove={handleBulkMove}
+          handleBulkCopy={handleBulkCopy}
 
-                      <button 
-                        onClick={() => {
-                          triggerFileSelect();
-                          setNewDropdownOpen(false);
-                        }} 
-                        className="dropdown-item"
-                      >
-                        <Upload size={16} />
-                        <span>Upload File</span>
-                      </button>
-
-                      <button 
-                        onClick={() => {
-                          triggerFolderSelect();
-                          setNewDropdownOpen(false);
-                        }} 
-                        className="dropdown-item"
-                      >
-                        <FolderUp size={16} />
-                        <span>Upload Folder</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* VIEW RENDER: TABLE OR ICONS */}
-          {explorerMode !== "links" && contentsLoading ? (
-            <div style={{ 
-              display: "flex", 
-              flexDirection: "column",
-              alignItems: "center", 
-              justifyContent: "center", 
-              height: "280px", 
-              borderRadius: "16px",
-              background: "rgba(255, 255, 255, 0.02)",
-              border: "1px dashed rgba(255, 255, 255, 0.1)",
-              backdropFilter: "blur(8px)",
-              gap: "16px",
-              marginTop: "12px"
-            }}>
-              <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Loader2 size={36} style={{ color: "var(--brand-accent)", animation: "spin-loader 1s linear infinite" }} />
-              </div>
-              <span style={{ fontSize: "14px", fontWeight: "500", color: "var(--text-secondary)", letterSpacing: "0.02em" }}>
-                {explorerMode === "personal" 
-                  ? "Querying personal drive from DB..." 
-                  : explorerMode === "shared" 
-                    ? "Directly listing Shared R2 S3..." 
-                    : "Directly listing Archive B2 S3..."}
-              </span>
-            </div>
-          ) : explorerMode === "links" ? (
-            /* ========================================================
-               SHARED LINKS MANAGER VIEW
-               ======================================================== */
-            <div>
-              {sharedLinksLoading ? (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "240px" }}>
-                  <Loader2 className="animate-spin" size={32} style={{ color: "var(--brand-accent)" }} />
-                  <span style={{ marginLeft: "12px", fontSize: "14px", color: "var(--text-secondary)" }}>Loading shared links...</span>
-                </div>
-              ) : sharedLinksList.length === 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
-                  <LinkIcon size={36} style={{ marginBottom: "12px", opacity: 0.7 }} />
-                  <p style={{ fontSize: "14px", fontWeight: "500" }}>No shared links created yet.</p>
-                  <p style={{ fontSize: "12px", opacity: 0.8, marginTop: "4px" }}>Generate share links by copying any file link in your drives.</p>
-                </div>
-              ) : (
-                <div className="files-container">
-                  <div className="table-header" style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr" }}>
-                    <div>File Name</div>
-                    <div>Created At</div>
-                    <div>Expires At</div>
-                    <div style={{ textAlign: "right" }}>Actions</div>
-                  </div>
-
-                  {sharedLinksList.map((link: any) => {
-                    const isExpired = new Date() > new Date(link.expiresAt);
-                    const isRevoked = link.isRevoked;
-                    const isActive = !isExpired && !isRevoked;
-
-                    let statusBadge = (
-                      <span className="badge success" style={{ color: "#10b981", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                        Active
-                      </span>
-                    );
-                    if (isRevoked) {
-                      statusBadge = (
-                        <span className="badge danger" style={{ color: "var(--accent-destructive)", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                          Revoked
-                        </span>
-                      );
-                    } else if (isExpired) {
-                      statusBadge = (
-                        <span className="badge warning" style={{ color: "#f59e0b", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                          Expired
-                        </span>
-                      );
-                    }
-
-                    return (
-                      <div 
-                        key={link.id} 
-                        className="file-row" 
-                        style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr", cursor: "default" }}
-                      >
-                        <div className="file-info" style={{ minWidth: 0 }}>
-                          <LinkIcon size={16} style={{ color: "var(--brand-accent)", opacity: isActive ? 1 : 0.5, flexShrink: 0 }} />
-                          <span className="file-name" title={link.filename} style={{ textDecoration: isActive ? "none" : "line-through", opacity: isActive ? 1 : 0.6 }}>
-                            {link.filename}
-                          </span>
-                        </div>
-
-                        <div className="file-size" style={{ opacity: 0.8, fontSize: "13px" }}>
-                          {new Date(link.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                        </div>
-
-                        <div className="file-date" style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-                          <span style={{ opacity: isActive ? 0.9 : 0.6, fontSize: "13px" }}>
-                            {new Date(link.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                          {statusBadge}
-                        </div>
-
-                        <div className="file-actions" style={{ gap: "8px", justifyContent: "flex-end" }}>
-                          <button
-                            onClick={async () => {
-                              const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-                              const shareUrl = `${appUrl}/share/${link.id}`;
-                              await navigator.clipboard.writeText(shareUrl);
-                              showToast("Proxy sharing link copied to clipboard!", "success");
-                            }}
-                            className="btn-icon"
-                            title="Copy Secure Link"
-                            style={{ opacity: isActive ? 1 : 0.5 }}
-                          >
-                            <Copy size={16} />
-                          </button>
-
-                          <button
-                            onClick={async () => {
-                              try {
-                                await extendSharedLink(link.id, 24);
-                                refetchSharedLinks();
-                                showToast("Link lifespan extended by 24h!", "success");
-                              } catch (e) {
-                                showToast("Failed to extend link", "error");
-                              }
-                            }}
-                            className="btn-icon"
-                            title="Extend Age (Add 24h)"
-                            style={{ color: "var(--brand-accent)" }}
-                          >
-                            <Plus size={16} />
-                          </button>
-
-                          {isActive && (
-                            <button
-                              onClick={async () => {
-                                try {
-                                  await revokeSharedLink(link.id);
-                                  refetchSharedLinks();
-                                  showToast("Link expired instantly!", "success");
-                                } catch (e) {
-                                  showToast("Failed to revoke link", "error");
-                                }
-                              }}
-                              className="btn-icon delete"
-                              title="Expire Right Away (Revoke)"
-                            >
-                              <Minus size={16} style={{ color: "#ef4444" }} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ) : viewMode === "table" ? (
-            /* ========================================================
-               1. UNIFIED TABLE LIST VIEW (DEFAULT)
-               ======================================================== */
-            <div>
-              {filteredFolders.length === 0 && filteredAssets.length === 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
-                  <File size={36} style={{ marginBottom: "12px" }} />
-                  <p style={{ fontSize: "14px" }}>No folders or files found here yet.</p>
-                </div>
-              ) : (
-                <div className="files-container">
-                  <div className="table-header">
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectAll();
-                        }}
-                        className={`master-select-checkbox ${isAllSelected() ? "selected" : ""}`}
-                        title="Select All / None"
-                      >
-                        {isAllSelected() ? (
-                          <CheckSquare size={16} className="brand-accent" />
-                        ) : (
-                          <Square size={16} />
-                        )}
-                      </button>
-                      <span>Name</span>
-                    </div>
-                    <div>Size</div>
-                    <div>Type / Owner</div>
-                    <div style={{ textAlign: "right" }}>Actions</div>
-                  </div>
-
-                  {/* FOLDERS LIST ROWS FIRST */}
-                  {filteredFolders.map((folder) => {
-                    const isFolderSelected = selectedFolderIds.has(folder.id);
-                    return (
-                      <div 
-                        key={folder.id} 
-                        className={`file-row ${isFolderSelected ? "selected" : ""}`}
-                        style={{ cursor: "pointer" }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          navigateToFolder(folder);
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigateToFolder(folder);
-                        }}
-                        onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
-                      >
-                        <div className="file-info">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleFolderSelection(folder.id);
-                            }}
-                            className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
-                            title={isFolderSelected ? "Deselect folder" : "Select folder"}
-                          >
-                            {isFolderSelected ? (
-                              <CheckSquare size={16} className="brand-accent" />
-                            ) : (
-                              <Square size={16} className="checkbox-unselected" />
-                            )}
-                          </button>
-                          <Folder className="folder-icon" size={18} style={{ color: "var(--accent-indigo)" }} />
-                          <span className="file-name" title={folder.name}>{folder.name}</span>
-                        </div>
-
-                        <div className="file-size">-</div>
-
-                        <div className="file-date">Folder</div>
-
-                         <div className="file-actions">
-                          {(isAdmin || ('userId' in folder && folder.userId === currentUserId)) && explorerMode !== "archive" && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteFolder(folder.id, folder.name);
-                              }}
-                              className="btn-icon delete"
-                              title="Delete Folder"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* FILES LIST ROWS NEXT */}
-                  {filteredAssets.map((asset) => {
-                    const isAssetSelected = selectedAssetIds.has(asset.id);
-                    return (
-                      <div 
-                        key={asset.id} 
-                        className={`file-row ${isAssetSelected ? "selected" : ""}`}
-                        onContextMenu={(e) => handleContextMenu(e, asset, "file")}
-                        style={{ cursor: "pointer" }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadFile(asset.id);
-                        }}
-                      >
-                        <div className="file-info">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleAssetSelection(asset.id);
-                            }}
-                            className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
-                            title={isAssetSelected ? "Deselect file" : "Select file"}
-                          >
-                            {isAssetSelected ? (
-                              <CheckSquare size={16} className="brand-accent" />
-                            ) : (
-                              <Square size={16} className="checkbox-unselected" />
-                            )}
-                          </button>
-                          <File className="file-icon" size={18} style={{ color: "var(--accent-blue)" }} />
-                          <span className="file-name" title={asset.filename}>{asset.filename}</span>
-                        </div>
-
-                        <div className="file-size">{formatBytes(asset.size)}</div>
-
-                        <div className="file-date" title={asset.uploadedBy || "Creator"}>{asset.uploadedBy || "Creator"}</div>
-
-                        <div className="file-actions">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownloadFile(asset.id);
-                            }} 
-                            className="btn-icon" 
-                            title="Download File"
-                          >
-                            <Download size={16} />
-                          </button>
-                           {(isAdmin || ('uploadedById' in asset && asset.uploadedById === currentUserId)) && explorerMode !== "archive" && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteFile(asset.id);
-                              }} 
-                              className="btn-icon delete" 
-                              title="Delete File"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ) : (
-            /* ========================================================
-               2. VISUAL ICONS GRID VIEW
-               ======================================================== */
-            <div>
-              {/* Folders Grid Section */}
-              {filteredFolders.length > 0 && (
-                <div style={{ marginBottom: "32px" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                    <h3 className="section-title" style={{ margin: 0 }}>Folders</h3>
-                  </div>
-                  <div className="folders-grid">
-                    {filteredFolders.map((folder) => {
-                      const isFolderSelected = selectedFolderIds.has(folder.id);
-                      return (
-                        <div 
-                          key={folder.id} 
-                          className={`folder-card ${isFolderSelected ? "selected" : ""}`}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            navigateToFolder(folder);
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigateToFolder(folder);
-                          }}
-                          onContextMenu={(e) => handleContextMenu(e, folder, "folder")}
-                        >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleFolderSelection(folder.id);
-                            }}
-                            className={`item-select-checkbox ${isFolderSelected ? "selected" : ""}`}
-                            title={isFolderSelected ? "Deselect folder" : "Select folder"}
-                          >
-                            {isFolderSelected ? (
-                              <CheckSquare size={16} className="brand-accent" />
-                            ) : (
-                              <Square size={16} className="checkbox-unselected" />
-                            )}
-                          </button>
-
-                          <Folder className="folder-icon" size={24} />
-                          <span className="folder-name">{folder.name}</span>
-                           {(isAdmin || ('userId' in folder && folder.userId === currentUserId)) && explorerMode !== "archive" && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteFolder(folder.id, folder.name);
-                              }}
-                              className="btn-icon delete"
-                              style={{ marginLeft: "auto", flexShrink: 0 }}
-                              title="Delete Folder"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Files Grid Section */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" }}>
-                <h3 className="section-title" style={{ margin: 0 }}>Files</h3>
-                {filteredAssets.length > 0 && (
-                  <button 
-                    onClick={handleSelectAll} 
-                    className="btn-text-select-all"
-                    style={{ fontSize: "13px", color: "var(--brand-accent)", background: "none", border: "none", cursor: "pointer", fontWeight: "600", padding: "4px 8px", borderRadius: "4px" }}
-                  >
-                    {isAllSelected() ? "Deselect All" : "Select All"}
-                  </button>
-                )}
-              </div>
-
-              {filteredFolders.length === 0 && filteredAssets.length === 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "180px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
-                  <File size={36} style={{ marginBottom: "12px" }} />
-                  <p style={{ fontSize: "14px" }}>No folders or files found here yet.</p>
-                </div>
-              ) : filteredAssets.length === 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "180px", border: "1px dashed var(--border-color)", borderRadius: "12px", background: "var(--bg-secondary)", color: "var(--text-secondary)" }}>
-                  <File size={36} style={{ marginBottom: "12px" }} />
-                  <p style={{ fontSize: "14px" }}>No files uploaded here yet.</p>
-                </div>
-              ) : (
-                <div className="files-grid">
-                  {filteredAssets.map((asset) => {
-                    const isAssetSelected = selectedAssetIds.has(asset.id);
-                    return (
-                      <div 
-                        key={asset.id} 
-                        className={`file-card ${isAssetSelected ? "selected" : ""}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleAssetSelection(asset.id);
-                        }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation();
-                          handleDownloadFile(asset.id);
-                        }}
-                        onContextMenu={(e) => handleContextMenu(e, asset, "file")}
-                      >
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleAssetSelection(asset.id);
-                          }}
-                          className={`item-select-checkbox ${isAssetSelected ? "selected" : ""}`}
-                          title={isAssetSelected ? "Deselect file" : "Select file"}
-                        >
-                          {isAssetSelected ? (
-                            <CheckSquare size={16} className="brand-accent" />
-                          ) : (
-                            <Square size={16} className="checkbox-unselected" />
-                          )}
-                        </button>
-
-                        <div className="file-card-preview">
-                          <File className="file-card-icon" size={40} />
-                        </div>
-
-                        <div className="file-card-info">
-                          <span className="file-card-name" title={asset.filename}>{asset.filename}</span>
-                          <span className="file-card-meta">{formatBytes(asset.size)}</span>
-                        </div>
-
-                        <div className="file-card-actions">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDownloadFile(asset.id);
-                            }} 
-                            className="btn-icon" 
-                            title="Download File"
-                          >
-                            <Download size={14} />
-                          </button>
-                           {(isAdmin || ('uploadedById' in asset && asset.uploadedById === currentUserId)) && explorerMode !== "archive" && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteFile(asset.id);
-                              }} 
-                              className="btn-icon delete" 
-                              title="Delete File"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+          extendSharedLink={extendSharedLink}
+          revokeSharedLink={revokeSharedLink}
+          refetchSharedLinks={refetchSharedLinks}
+          showToast={showToast}
+        />
       </main>
 
-      {/* FLOATING MULTI-PART UPLOAD / OPERATION PROCESS DRAWER */}
-      {(uploadActive || downloadActive) && !uploadMinimized && (
-        <div className="progress-drawer">
-          <div className="drawer-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            <span className="drawer-title" style={{ fontWeight: '600' }}>
-              {Object.keys(uploadProgress).some(k => k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting"))
-                ? "Transfers & Operations"
-                : (Object.keys(downloadProgress).length > 0 && Object.keys(uploadProgress).length > 0)
-                  ? "Transfers & Operations"
-                  : Object.keys(downloadProgress).length > 0
-                    ? "Downloading File(s)"
-                    : "Uploading Video Chunk(s)"}
-            </span>
-            <div className="drawer-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button 
-                onClick={() => setUploadMinimized(true)} 
-                className="btn-icon" 
-                style={{ padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                title="Minimize"
-              >
-                <Minus size={14} />
-              </button>
-              {!(
-                Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ||
-                Object.values(downloadProgress).some(item => !item.isCancelled && !item.isFailed && item.progress < 100)
-              ) && (
-                <button 
-                  onClick={() => {
-                    setUploadActive(false);
-                    setDownloadActive(false);
-                    setUploadProgress({});
-                    setDownloadProgress({});
-                  }} 
-                  className="btn-icon" 
-                  style={{ padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  title="Close"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="drawer-body">
-            {/* Upload items */}
-            {Object.entries(uploadProgress).map(([filename, progress]) => {
-              const isUploading = progress >= 0 && progress < 100;
-              const isCompleted = progress === 100;
-              const isCancelled = progress === -1;
-              const isFailed = progress === -2;
-              const isBackgroundOp = filename.startsWith("Moving") || filename.startsWith("Copying") || filename.startsWith("Deleting");
+      <TransferDrawer
+        uploadActive={uploadActive}
+        downloadActive={downloadActive}
+        uploadMinimized={uploadMinimized}
+        setUploadActive={setUploadActive}
+        setDownloadActive={setDownloadActive}
+        setUploadMinimized={setUploadMinimized}
+        uploadProgress={uploadProgress}
+        setUploadProgress={setUploadProgress}
+        downloadProgress={downloadProgress}
+        setDownloadProgress={setDownloadProgress}
+        transferMetrics={transferMetrics}
+        uploadErrors={uploadErrors}
+        handleCancelUpload={handleCancelUpload}
+        handleCancelDownload={handleCancelDownload}
+      />
 
-              return (
-                <div key={filename} className="upload-item">
-                  <div className="upload-info" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: '8px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0%', minWidth: 0 }}>
-                      <span className="upload-name" title={filename} style={{ fontSize: '13px', fontWeight: '600' }}>
-                        {filename}
-                      </span>
-                      {isUploading && transferMetrics[filename] && (
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '1px' }}>
-                          {transferMetrics[filename].speedText} • {transferMetrics[filename].etaText}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginTop: '2px' }}>
-                      <span className="upload-status-text" style={{ 
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        color: isCompleted 
-                          ? 'var(--accent-success, #10b981)' 
-                          : isCancelled 
-                            ? 'var(--text-secondary)' 
-                            : isFailed 
-                              ? 'var(--accent-danger, #ef4444)' 
-                              : 'var(--brand-accent)'
-                      }}>
-                        {isCompleted && "COMPLETED"}
-                        {isCancelled && "CANCELLED"}
-                        {isFailed && "FAILED"}
-                        {isUploading && (isBackgroundOp ? "WORKING..." : `${progress}%`)}
-                      </span>
+      <ConfirmModal
+        confirmModal={confirmModal}
+        onClose={() => setConfirmModal(null)}
+        onConfirm={() => {
+          if (confirmModal) {
+            confirmModal.onConfirm();
+            setConfirmModal(null);
+          }
+        }}
+      />
 
-                      {isUploading && !isBackgroundOp && (
-                        <button
-                          onClick={() => handleCancelUpload(filename)}
-                          className="btn-icon cancel-upload-btn"
-                          style={{ 
-                            padding: '1px',
-                            color: 'var(--text-muted)',
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            cursor: 'pointer'
-                          }}
-                          title="Cancel Upload"
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="progress-track">
-                    <div 
-                      className={`progress-bar ${isCancelled ? 'cancelled' : isFailed ? 'failed' : ''} ${isBackgroundOp && isUploading ? 'indeterminate' : ''}`} 
-                      style={{ 
-                        width: `${isCancelled || isFailed ? 100 : (isBackgroundOp && isUploading) ? 100 : progress}%`,
-                        background: isCancelled 
-                          ? 'var(--border-color, #374151)' 
-                          : isFailed 
-                            ? 'var(--accent-danger, #ef4444)' 
-                            : (isBackgroundOp && isUploading)
-                              ? undefined
-                              : 'linear-gradient(90deg, var(--accent-blue), var(--accent-indigo))'
-                      }} 
-                    />
-                  </div>
-                  {isFailed && uploadErrors[filename] && (
-                    <div style={{ fontSize: '10px', color: 'var(--accent-danger, #ef4444)', marginTop: '4px', wordBreak: 'break-all', opacity: 0.9 }}>
-                      {uploadErrors[filename]}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+      <DestinationPickerModal
+        isOpen={destinationPickerOpen}
+        onClose={() => setDestinationPickerOpen(false)}
+        pickerAction={pickerAction}
+        pickerDriveMode={pickerDriveMode}
+        pickerFolderPath={pickerFolderPath}
+        pickerLoading={pickerLoading}
+        pickerFolders={pickerFolders}
+        onToggleDriveMode={handleTogglePickerDriveMode}
+        onBreadcrumbClick={handlePickerBreadcrumbClick}
+        onNavigate={handlePickerNavigate}
+        onExecute={handleExecutePickerAction}
+      />
 
-            {/* Download items */}
-            {Object.entries(downloadProgress).map(([filename, item]) => {
-              const progress = item.progress;
-              const isDownloading = progress >= 0 && progress < 100 && !item.isCancelled && !item.isFailed;
-              const isCompleted = progress === 100;
-              const isCancelled = item.isCancelled || progress === -1;
-              const isFailed = item.isFailed || progress === -2;
+      <PreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        previewTarget={previewTarget}
+        previewLoading={previewLoading}
+        previewUrl={previewUrl}
+        previewTextContent={previewTextContent}
+        onDownload={handleDownloadFile}
+      />
 
-              return (
-                <div key={filename} className="upload-item">
-                  <div className="upload-info" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: '1 1 0%', minWidth: 0 }}>
-                      <Download size={14} style={{ color: 'var(--accent-indigo, #6366f1)', flexShrink: 0 }} />
-                      <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, minWidth: 0 }}>
-                        <span className="upload-name" title={filename} style={{ fontSize: '13px', fontWeight: '600' }}>
-                          {filename}
-                        </span>
-                        {isDownloading && transferMetrics[filename] && (
-                          <span style={{ fontSize: '10px', color: 'var(--text-muted, #9ca3af)', marginTop: '1px' }}>
-                            {transferMetrics[filename].speedText} • {transferMetrics[filename].etaText}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginTop: '2px' }}>
-                      <span className="upload-status-text" style={{ 
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        color: isCompleted 
-                          ? 'var(--accent-success, #10b981)' 
-                          : isCancelled 
-                            ? 'var(--text-secondary)' 
-                            : isFailed 
-                              ? 'var(--accent-danger, #ef4444)' 
-                              : 'var(--accent-indigo)'
-                      }}>
-                        {isCompleted && "DOWNLOADED"}
-                        {isCancelled && "CANCELLED"}
-                        {isFailed && "FAILED"}
-                        {isDownloading && `${progress}%`}
-                      </span>
+      <FolderModal
+        isOpen={folderModalOpen}
+        onClose={() => setFolderModalOpen(false)}
+        newFolderName={newFolderName}
+        setNewFolderName={setNewFolderName}
+        isCreatingFolder={isCreatingFolder}
+        onCreateFolder={handleCreateFolder}
+      />
 
-                      {isDownloading && (
-                        <button
-                          onClick={() => handleCancelDownload(filename)}
-                          className="btn-icon cancel-upload-btn"
-                          style={{ 
-                            padding: '1px',
-                            color: 'var(--text-muted)',
-                            display: 'flex', 
-                            alignItems: 'center', 
-                            justifyContent: 'center',
-                            cursor: 'pointer'
-                          }}
-                          title="Cancel Download"
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="progress-track">
-                    <div 
-                      className={`progress-bar ${isCancelled ? 'cancelled' : isFailed ? 'failed' : ''}`} 
-                      style={{ 
-                        width: `${isCancelled || isFailed ? 100 : progress}%`,
-                        background: isCancelled 
-                          ? 'var(--border-color, #374151)' 
-                          : isFailed 
-                            ? 'var(--accent-danger, #ef4444)' 
-                            : 'linear-gradient(90deg, #6366f1, #a855f7)' // Indigo to Purple gradient
-                      }} 
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <CreateProjectModal
+        isOpen={projectModalOpen}
+        onClose={() => setProjectModalOpen(false)}
+        newProjectName={newProjectName}
+        setNewProjectName={setNewProjectName}
+        newProjectClient={newProjectClient}
+        setNewProjectClient={setNewProjectClient}
+        shareWithAll={shareWithAll}
+        setShareWithAll={setShareWithAll}
+        approvedUsers={approvedUsers}
+        selectedUserIds={selectedUserIds}
+        setSelectedUserIds={setSelectedUserIds}
+        isCreatingProject={isCreatingProject}
+        onCreateProject={handleCreateProject}
+      />
 
-      {/* FLOATING MINIMIZED PILL */}
-      {(uploadActive || downloadActive) && uploadMinimized && (
-        <div 
-          className="upload-minimized-pill" 
-          onClick={() => setUploadMinimized(false)}
-          title="Click to expand status"
-        >
-          <div className="minimized-pill-content">
-            {Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ||
-             Object.values(downloadProgress).some(item => !item.isCancelled && !item.isFailed && item.progress < 100) ? (
-              <Loader2 className="upload-spin-icon" size={16} />
-            ) : (
-              <CheckCircle size={16} style={{ color: "var(--accent-success, #10b981)" }} />
-            )}
-            <span className="minimized-pill-text">
-              {(() => {
-                const activeUploads = Object.entries(uploadProgress).filter(([k, p]) => p >= 0 && p < 100 && !k.startsWith("Moving") && !k.startsWith("Copying") && !k.startsWith("Deleting"));
-                const activeOps = Object.entries(uploadProgress).filter(([k, p]) => p >= 0 && p < 100 && (k.startsWith("Moving") || k.startsWith("Copying") || k.startsWith("Deleting")));
-                const activeDownloads = Object.entries(downloadProgress).filter(([_, item]) => !item.isCancelled && !item.isFailed && item.progress >= 0 && item.progress < 100);
+      <RenameProjectModal
+        isOpen={renameProjectModalOpen}
+        onClose={() => {
+          setRenameProjectModalOpen(false);
+          setSelectedProjectToEdit(null);
+          setEditProjectName("");
+          setEditProjectClient("");
+          setEditShareWithAll(true);
+          setEditSelectedUserIds([]);
+        }}
+        selectedProjectToEdit={selectedProjectToEdit}
+        editProjectName={editProjectName}
+        setEditProjectName={setEditProjectName}
+        editProjectClient={editProjectClient}
+        setEditProjectClient={setEditProjectClient}
+        editShareWithAll={editShareWithAll}
+        setEditShareWithAll={setEditShareWithAll}
+        approvedUsers={approvedUsers}
+        editSelectedUserIds={editSelectedUserIds}
+        setEditSelectedUserIds={setEditSelectedUserIds}
+        isRenamingProject={isRenamingProject}
+        onRenameProject={handleRenameProject}
+      />
 
-                const upCount = activeUploads.length;
-                const opCount = activeOps.length;
-                const downCount = activeDownloads.length;
+      <DeleteProjectModal
+        isOpen={deleteProjectModalOpen}
+        onClose={() => setDeleteProjectModalOpen(false)}
+        selectedProjectToDelete={selectedProjectToDelete}
+        isDeletingProject={isDeletingProject}
+        onDeleteProject={handleDeleteProject}
+      />
 
-                if (upCount > 0 || opCount > 0 || downCount > 0) {
-                  const parts: string[] = [];
-                  if (upCount > 0) {
-                    parts.push(`Uploading ${upCount} file${upCount > 1 ? 's' : ''}`);
-                  }
-                  if (downCount > 0) {
-                    parts.push(`Downloading ${downCount} file${downCount > 1 ? 's' : ''}`);
-                  }
-                  if (opCount > 0) {
-                    parts.push(`${opCount} file operation${opCount > 1 ? 's' : ''}`);
-                  }
-                  return parts.join(" & ") + "...";
-                }
-                return "Operations completed";
-              })()}
-            </span>
-          </div>
-          <div className="minimized-pill-actions" onClick={(e) => e.stopPropagation()}>
-            {!(
-              Object.values(uploadProgress).some(progress => progress >= 0 && progress < 100) ||
-              Object.values(downloadProgress).some(item => !item.isCancelled && !item.isFailed && item.progress < 100)
-            ) && (
-              <button 
-                onClick={() => {
-                  setUploadActive(false);
-                  setDownloadActive(false);
-                  setUploadProgress({});
-                  setDownloadProgress({});
-                }} 
-                className="btn-icon minimized-close-btn"
-                style={{ padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                title="Close"
-              >
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      <DetailedUsageModal
+        isOpen={showDetailedUsageModal}
+        onClose={() => setShowDetailedUsageModal(false)}
+        detailedUsageLoading={detailedUsageLoading}
+        detailedUsageStats={detailedUsageStats}
+      />
 
-      {/* CREATE FOLDER POPUP MODAL */}
-      {folderModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Create New Folder</h3>
-            <form onSubmit={handleCreateFolder} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Folder Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. Edited Shoots"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  required
-                  autoFocus
-                  disabled={isCreatingFolder}
-                />
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setFolderModalOpen(false)} className="btn-secondary" disabled={isCreatingFolder}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={isCreatingFolder}>
-                  {isCreatingFolder ? (
-                    <>
-                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
-                      Creating...
-                    </>
-                  ) : "Create Folder"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <TextEditorModal
+        isOpen={textModalOpen}
+        onClose={() => setTextModalOpen(false)}
+        textEditorMode={textEditorMode}
+        textFileName={textFileName}
+        setTextFileName={setTextFileName}
+        textContent={textContent}
+        setTextContent={setTextContent}
+        onSave={handleSaveTextFile}
+      />
 
-      {/* DETAILED USER STORAGE ANALYTICS MODAL */}
-      {showDetailedUsageModal && (
-        <div className="modal-overlay" style={{ zIndex: 1000 }}>
-          <div className="modal" style={{ maxWidth: "780px", width: "100%", padding: "32px", background: "#0c0c0e" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-              <div>
-                <h3 style={{ fontSize: "20px", fontWeight: "800", color: "#ffffff", display: "flex", alignItems: "center", gap: "10px" }}>
-                  <Activity size={22} style={{ color: "var(--accent-blue)" }} />
-                  <span>Storage & Usage Analytics</span>
-                </h3>
-                <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "4px" }}>
-                  Real-time analytics of your personal workspace storage and items.
-                </p>
-              </div>
-              <button 
-                onClick={() => setShowDetailedUsageModal(false)} 
-                className="btn-secondary" 
-                style={{ padding: "8px 12px", borderRadius: "8px", minWidth: "auto", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)", color: "#a1a1aa" }}
-              >
-                Close
-              </button>
-            </div>
+      <DocsEditorModal
+        isOpen={docsModalOpen}
+        onClose={() => setDocsModalOpen(false)}
+        docsEditorMode={docsEditorMode}
+        docTitle={docTitle}
+        setDocTitle={setDocTitle}
+        editorContainerRef={editorContainerRef}
+        onSave={handleSaveDocsFile}
+      />
 
-            {detailedUsageLoading || !detailedUsageStats ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "64px 0", gap: "16px" }}>
-                <div style={{
-                  width: "40px",
-                  height: "40px",
-                  borderRadius: "50%",
-                  border: "3px solid var(--accent-blue)",
-                  borderTopColor: "transparent",
-                  animation: "spin 1.2s infinite linear"
-                }} />
-                <p style={{ color: "var(--text-secondary)", fontSize: "13px" }}>Calculating storage statistics & project breakdown...</p>
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "28px" }}>
-                {/* IMMICH INSPIRED NUMERIC STATS GRID */}
-                <div style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-                  gap: "16px"
-                }}>
-                  {/* CARD 1: Space Used */}
-                  <div style={{
-                    background: "rgba(24, 24, 27, 0.4)",
-                    border: "1px solid rgba(255, 255, 255, 0.04)",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    minHeight: "100px"
-                  }}>
-                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Storage Space</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#38bdf8", alignSelf: "flex-end", marginTop: "12px" }}>
-                      {(detailedUsageStats.used / (1024 * 1024 * 1024)).toFixed(1)} <span style={{ fontSize: "11px", opacity: 0.5 }}>GiB</span>
-                    </span>
-                  </div>
+      <SheetEditorModal
+        isOpen={sheetModalOpen}
+        onClose={() => setSheetModalOpen(false)}
+        sheetEditorMode={sheetEditorMode}
+        sheetName={sheetName}
+        setSheetName={setSheetName}
+        sheetCells={sheetCells}
+        onCellChange={(col, row, val) => {
+          setSheetCells(prev => ({
+            ...prev,
+            [`${col}${row}`]: val
+          }));
+        }}
+        onSave={handleSaveSheetFile}
+      />
 
-                  {/* CARD 2: Files Count */}
-                  <div style={{
-                    background: "rgba(24, 24, 27, 0.4)",
-                    border: "1px solid rgba(255, 255, 255, 0.04)",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    minHeight: "100px"
-                  }}>
-                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Files</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#818cf8", alignSelf: "flex-end", marginTop: "12px" }}>
-                      {detailedUsageStats.totalFiles} <span style={{ fontSize: "11px", opacity: 0.5 }}>FILES</span>
-                    </span>
-                  </div>
-
-                  {/* CARD 3: Folders Count */}
-                  <div style={{
-                    background: "rgba(24, 24, 27, 0.4)",
-                    border: "1px solid rgba(255, 255, 255, 0.04)",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    minHeight: "100px"
-                  }}>
-                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Folders</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#10b981", alignSelf: "flex-end", marginTop: "12px" }}>
-                      {detailedUsageStats.totalFolders} <span style={{ fontSize: "11px", opacity: 0.5 }}>DIRS</span>
-                    </span>
-                  </div>
-
-                  {/* CARD 4: Projects Created */}
-                  <div style={{
-                    background: "rgba(24, 24, 27, 0.4)",
-                    border: "1px solid rgba(255, 255, 255, 0.04)",
-                    borderRadius: "12px",
-                    padding: "16px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    minHeight: "100px"
-                  }}>
-                    <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>My Projects</span>
-                    <span style={{ fontFamily: "monospace", fontSize: "20px", fontWeight: "700", color: "#fbbf24", alignSelf: "flex-end", marginTop: "12px" }}>
-                      {detailedUsageStats.totalProjects} <span style={{ fontSize: "11px", opacity: 0.5 }}>PROJS</span>
-                    </span>
-                  </div>
-                </div>
-
-                {/* PROJECT DETAILED BREAKDOWN LIST */}
-                <div>
-                  <h4 style={{ fontSize: "13px", fontWeight: "700", color: "#ffffff", marginBottom: "12px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Storage breakdown by project
-                  </h4>
-                  {detailedUsageStats.projectBreakdown.length === 0 ? (
-                    <p style={{ fontSize: "12px", color: "var(--text-muted)", background: "rgba(255,255,255,0.01)", padding: "16px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.03)" }}>
-                      You haven't created any projects yet, or they have no completed uploads.
-                    </p>
-                  ) : (
-                    <div style={{ maxHeight: "280px" }} className="scrollable-table-container">
-                      <table className="modern-table">
-                        <thead>
-                          <tr>
-                            <th>Project Name</th>
-                            <th>Client</th>
-                            <th style={{ textAlign: "center" }}>Files Count</th>
-                            <th>Storage Occupied</th>
-                            <th>Workspace Ratio</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detailedUsageStats.projectBreakdown.map((proj: any) => {
-                            const pct = Math.min(100, Math.max(0, (proj.sizeUsed / detailedUsageStats.limit) * 100));
-                            const sizeReadable = proj.sizeUsed > 0 
-                              ? (proj.sizeUsed / (1024 * 1024 * 1024)).toFixed(2) + " GiB" 
-                              : "0.00 GiB";
-                            return (
-                              <tr key={proj.id}>
-                                <td>
-                                  <span style={{ fontWeight: "600", color: "#e4e4e7" }}>{proj.name}</span>
-                                </td>
-                                <td>
-                                  <span style={{ color: "var(--text-secondary)" }}>{proj.clientName || "—"}</span>
-                                </td>
-                                <td style={{ textAlign: "center", color: "#a1a1aa" }}>
-                                  {proj.filesCount}
-                                </td>
-                                <td style={{ color: "#38bdf8", fontWeight: "500" }}>
-                                  {sizeReadable}
-                                </td>
-                                <td>
-                                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                    <div style={{ 
-                                      flex: 1, 
-                                      height: "5px", 
-                                      background: "rgba(255, 255, 255, 0.05)", 
-                                      borderRadius: "3px", 
-                                      overflow: "hidden" 
-                                    }}>
-                                      <div style={{ 
-                                        width: `${pct}%`, 
-                                        height: "100%", 
-                                        background: "linear-gradient(90deg, var(--accent-blue), var(--accent-indigo))",
-                                        borderRadius: "3px" 
-                                      }} />
-                                    </div>
-                                    <span style={{ fontSize: "11px", color: "var(--text-muted)", width: "35px", textAlign: "right" }}>
-                                      {pct.toFixed(1)}%
-                                    </span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-
-      {/* CREATE PROJECT POPUP MODAL */}
-      {projectModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Add New Project</h3>
-            <form onSubmit={handleCreateProject} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Project Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. Wedding Promos"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  required
-                  autoFocus
-                  disabled={isCreatingProject}
-                />
-              </div>
-
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Client Name (Optional)</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="e.g. Sony Entertainment"
-                  value={newProjectClient}
-                  onChange={(e) => setNewProjectClient(e.target.value)}
-                  disabled={isCreatingProject}
-                />
-              </div>
-
-              <div className="form-group" style={{ margin: 0, marginTop: "4px" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
-                  <input 
-                    type="checkbox" 
-                    checked={shareWithAll}
-                    onChange={(e) => setShareWithAll(e.target.checked)}
-                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
-                    disabled={isCreatingProject}
-                  />
-                  <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
-                </label>
-              </div>
-
-              {!shareWithAll && approvedUsers && approvedUsers.length > 0 && (
-                <div className="form-group" style={{ margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <label className="form-label" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Select Specific Users to Share With</label>
-                  <div style={{
-                    maxHeight: "150px",
-                    overflowY: "auto",
-                    backgroundColor: "rgba(255, 255, 255, 0.02)",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: "8px",
-                    padding: "8px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "6px"
-                  }} className="custom-scrollbar">
-                    {approvedUsers.map((user: any) => {
-                      const isChecked = selectedUserIds.includes(user.id);
-                      return (
-                        <label 
-                          key={user.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "6px 8px",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            transition: "background-color 0.2s",
-                            backgroundColor: isChecked ? "rgba(99, 102, 241, 0.05)" : "transparent"
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                if (isChecked) {
-                                  setSelectedUserIds(selectedUserIds.filter(id => id !== user.id));
-                                } else {
-                                  setSelectedUserIds([...selectedUserIds, user.id]);
-                                }
-                              }}
-                              style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
-                              disabled={isCreatingProject}
-                            />
-                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                              <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
-                              <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
-                            </div>
-                          </div>
-                          <span style={{
-                            fontSize: "10px",
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            backgroundColor: user.role === "admin" ? "rgba(239, 68, 68, 0.1)" : user.role === "manager" ? "rgba(245, 158, 11, 0.1)" : "rgba(99, 102, 241, 0.1)",
-                            color: user.role === "admin" ? "#f87171" : user.role === "manager" ? "#fbbf24" : "#818cf8"
-                          }}>
-                            {user.role}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button type="button" onClick={() => setProjectModalOpen(false)} className="btn-secondary" disabled={isCreatingProject}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={isCreatingProject}>
-                  {isCreatingProject ? (
-                    <>
-                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
-                      Adding...
-                    </>
-                  ) : "Add Project"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* RENAME PROJECT POPUP MODAL */}
-      {renameProjectModalOpen && selectedProjectToEdit && (
-        <div className="modal-overlay">
-          <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700" }}>Rename Project</h3>
-            <form onSubmit={handleRenameProject} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Project Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={editProjectName}
-                  onChange={(e) => setEditProjectName(e.target.value)}
-                  required
-                  autoFocus
-                  disabled={isRenamingProject}
-                />
-              </div>
-
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Client Name (Optional)</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={editProjectClient}
-                  onChange={(e) => setEditProjectClient(e.target.value)}
-                  disabled={isRenamingProject}
-                />
-              </div>
-
-              <div className="form-group" style={{ margin: 0, marginTop: "4px" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
-                  <input 
-                    type="checkbox" 
-                    checked={editShareWithAll}
-                    onChange={(e) => setEditShareWithAll(e.target.checked)}
-                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
-                    disabled={isRenamingProject}
-                  />
-                  <span style={{ fontSize: "13px", color: "var(--text-primary)", fontWeight: 500 }}>Share with all users (recommended)</span>
-                </label>
-              </div>
-
-              {!editShareWithAll && approvedUsers && approvedUsers.length > 0 && (
-                <div className="form-group" style={{ margin: 0, display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <label className="form-label" style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Select Specific Users to Share With</label>
-                  <div style={{
-                    maxHeight: "150px",
-                    overflowY: "auto",
-                    backgroundColor: "rgba(255, 255, 255, 0.02)",
-                    border: "1px solid var(--border-color)",
-                    borderRadius: "8px",
-                    padding: "8px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "6px"
-                  }} className="custom-scrollbar">
-                    {approvedUsers.map((user: any) => {
-                      const isChecked = editSelectedUserIds.includes(user.id);
-                      return (
-                        <label 
-                          key={user.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            padding: "6px 8px",
-                            borderRadius: "6px",
-                            cursor: "pointer",
-                            transition: "background-color 0.2s",
-                            backgroundColor: isChecked ? "rgba(99, 102, 241, 0.05)" : "transparent"
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0, flexGrow: 1 }}>
-                            <input 
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => {
-                                if (isChecked) {
-                                  setEditSelectedUserIds(editSelectedUserIds.filter(id => id !== user.id));
-                                } else {
-                                  setEditSelectedUserIds([...editSelectedUserIds, user.id]);
-                                }
-                              }}
-                              style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "var(--accent-indigo)" }}
-                              disabled={isRenamingProject}
-                            />
-                            <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                              <span style={{ fontSize: "13px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</span>
-                              <span style={{ fontSize: "11px", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
-                            </div>
-                          </div>
-                          <span style={{
-                            fontSize: "10px",
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.05em",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            backgroundColor: user.role === "admin" ? "rgba(239, 68, 68, 0.1)" : user.role === "manager" ? "rgba(245, 158, 11, 0.1)" : "rgba(99, 102, 241, 0.1)",
-                            color: user.role === "admin" ? "#f87171" : user.role === "manager" ? "#fbbf24" : "#818cf8"
-                          }}>
-                            {user.role}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button type="button" onClick={() => {
-                  setRenameProjectModalOpen(false);
-                  setSelectedProjectToEdit(null);
-                }} className="btn-secondary" disabled={isRenamingProject}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary" disabled={isRenamingProject}>
-                  {isRenamingProject ? (
-                    <>
-                      <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
-                      Saving...
-                    </>
-                  ) : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* DELETE PROJECT POPUP MODAL */}
-      {deleteProjectModalOpen && selectedProjectToDelete && (
-        <div className="modal-overlay">
-          <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700", color: "var(--accent-destructive)" }}>Delete Project?</h3>
-            <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
-              Are you sure you want to delete the project <strong>{selectedProjectToDelete.name}</strong>?
-            </p>
-            <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-destructive)", lineHeight: "1.4" }}>
-              <strong>WARNING:</strong> This action cannot be undone. All folders and physical files inside this project will be permanently deleted from Cloudflare R2 and the database.
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-              <button type="button" onClick={() => {
-                setDeleteProjectModalOpen(false);
-                setSelectedProjectToDelete(null);
-              }} className="btn-secondary" disabled={isDeletingProject}>
-                Cancel
-              </button>
-              <button 
-                onClick={handleDeleteProject} 
-                className="btn-primary" 
-                style={{ backgroundColor: "var(--accent-destructive)", display: "flex", alignItems: "center" }}
-                autoFocus
-                disabled={isDeletingProject}
-              >
-                {isDeletingProject ? (
-                  <>
-                    <Loader2 className="animate-spin" size={16} style={{ marginRight: "6px" }} />
-                    Deleting...
-                  </>
-                ) : "Delete Permanently"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* UNIFIED CUSTOM CONFIRM DIALOG MODAL */}
-      {confirmModal && confirmModal.open && (
-        <div className="modal-overlay">
-          <div className="modal animate-scale-up">
-            <h3 style={{ fontSize: "18px", fontWeight: "700", color: confirmModal.confirmColor || "var(--accent-destructive)" }}>
-              {confirmModal.title}
-            </h3>
-            <p style={{ fontSize: "14px", color: "var(--text-secondary)", margin: 0, lineHeight: "1.5" }}>
-              {confirmModal.message}
-            </p>
-            {confirmModal.warning && (
-              <div style={{ padding: "12px", backgroundColor: "rgba(239, 68, 68, 0.05)", border: "1px solid rgba(239, 68, 68, 0.2)", borderRadius: "8px", fontSize: "12px", color: "var(--accent-destructive)", lineHeight: "1.4" }}>
-                <strong>WARNING:</strong> {confirmModal.warning}
-              </div>
-            )}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-              <button 
-                type="button" 
-                onClick={() => setConfirmModal((prev) => prev ? { ...prev, open: false } : null)} 
-                className="btn-secondary"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={() => {
-                  confirmModal.onConfirm();
-                  setConfirmModal(null);
-                }} 
-                className="btn-primary" 
-                style={{ backgroundColor: confirmModal.confirmColor || "var(--accent-destructive)" }}
-                autoFocus
-              >
-                {confirmModal.confirmText || "Confirm"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CUSTOM CONTEXT MENU */}
-      {contextMenu && contextMenu.visible && (
-        <div 
-          className="custom-context-menu animate-scale-up" 
-          style={{ top: contextMenu.y, left: contextMenu.x, position: "fixed" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {contextMenu.type === "folder" ? (
-            <>
-              <button 
-                onClick={() => {
-                  navigateToFolder(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <FolderOpen size={16} />
-                <span>Open Folder</span>
-              </button>
-              {explorerMode !== "archive" && (
-                <button 
-                  onClick={() => {
-                    handleOpenRename(contextMenu.item, "folder");
-                    setContextMenu(null);
-                  }}
-                  className="context-menu-item"
-                >
-                  <Edit2 size={16} />
-                  <span>Rename</span>
-                </button>
-              )}
-              <button 
-                onClick={() => {
-                  handleOpenInfo(contextMenu.item, "folder");
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <Info size={16} />
-                <span>Get Info</span>
-              </button>
-              <button 
-                onClick={() => {
-                  handleCopyFolderLink(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <LinkIcon size={16} />
-                <span>Copy Share Link</span>
-              </button>
-               {(isAdmin || (contextMenu && contextMenu.item && 'userId' in contextMenu.item && contextMenu.item.userId === currentUserId)) && explorerMode !== "archive" && (
-                <button 
-                  onClick={() => {
-                    handleDeleteFolder(contextMenu.item.id, contextMenu.item.name);
-                    setContextMenu(null);
-                  }}
-                  className="context-menu-item delete"
-                >
-                  <Trash2 size={16} />
-                  <span>Delete Folder</span>
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <button 
-                onClick={() => {
-                  handleOpenPreview(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <Eye size={16} />
-                <span>Preview File</span>
-              </button>
-              <button 
-                onClick={() => {
-                  handleDownloadFile(contextMenu.item.id);
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <Download size={16} />
-                <span>Download</span>
-              </button>
-              <button 
-                onClick={() => {
-                  handleCopyLink(contextMenu.item);
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <LinkIcon size={16} />
-                <span>Copy Link</span>
-              </button>
-              {explorerMode !== "archive" && (() => {
-                const filename = contextMenu.item?.filename || "";
-                const isEditable = 
-                  filename.endsWith(".txt") || 
-                  filename.endsWith(".md") || 
-                  filename.endsWith(".html") || 
-                  filename.endsWith(".sheet.json");
-                
-                if (isEditable) {
-                  return (
-                    <button 
-                      onClick={() => {
-                        const asset = contextMenu.item;
-                        if (filename.endsWith(".sheet.json")) {
-                          handleOpenSheetEditor(asset);
-                        } else if (filename.endsWith(".html")) {
-                          handleOpenDocsEditor(asset);
-                        } else {
-                          handleOpenTextEditor(asset);
-                        }
-                        setContextMenu(null);
-                      }}
-                      className="context-menu-item"
-                      style={{ color: "var(--accent-indigo)" }}
-                    >
-                      <Edit2 size={16} />
-                      <span>Edit File</span>
-                    </button>
-                  );
-                }
-                return null;
-              })()}
-              {explorerMode !== "archive" && (
-                <button 
-                  onClick={() => {
-                    handleOpenRename(contextMenu.item, "file");
-                    setContextMenu(null);
-                  }}
-                  className="context-menu-item"
-                >
-                  <Edit2 size={16} />
-                  <span>Rename</span>
-                </button>
-              )}
-              <button 
-                onClick={() => {
-                  handleOpenInfo(contextMenu.item, "file");
-                  setContextMenu(null);
-                }}
-                className="context-menu-item"
-              >
-                <Info size={16} />
-                <span>Get Info</span>
-              </button>
-               {(isAdmin || (contextMenu && contextMenu.item && 'uploadedById' in contextMenu.item && contextMenu.item.uploadedById === currentUserId)) && explorerMode !== "archive" && (
-                <button 
-                  onClick={() => {
-                    handleDeleteFile(contextMenu.item.id);
-                    setContextMenu(null);
-                  }}
-                  className="context-menu-item delete"
-                >
-                  <Trash2 size={16} />
-                  <span>Delete File</span>
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* RENAME POPUP MODAL */}
       {renameModalOpen && renameTarget && (
         <div className="modal-overlay">
           <div className="modal">
@@ -4926,7 +3204,6 @@ function DrivePageContent() {
         </div>
       )}
 
-      {/* GET INFO POPUP MODAL */}
       {infoModalOpen && infoTarget && (
         <div className="modal-overlay" onClick={() => { setInfoModalOpen(false); setInfoTarget(null); }}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "460px" }}>
@@ -4997,497 +3274,6 @@ function DrivePageContent() {
               >
                 Close
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* FILE PREVIEW MODAL */}
-      {previewModalOpen && previewTarget && (
-        <div className="modal-overlay" onClick={() => { setPreviewModalOpen(false); setPreviewTarget(null); }}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "80vw", width: "800px", background: "var(--bg-secondary)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <File className="file-icon" size={22} />
-                <h3 style={{ fontSize: "16px", fontWeight: "700", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "450px" }}>
-                  Preview: {previewTarget.filename}
-                </h3>
-              </div>
-              <button 
-                onClick={() => { setPreviewModalOpen(false); setPreviewTarget(null); }}
-                className="btn-icon"
-                title="Close Preview"
-              >
-                <ChevronRight size={20} style={{ transform: "rotate(90deg)" }} />
-              </button>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "200px", maxHeight: "70vh", overflow: "hidden" }}>
-              {previewLoading ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
-                  <Loader2 className="animate-spin brand-accent" size={32} />
-                  <span>Loading Preview...</span>
-                </div>
-              ) : (
-                <>
-                  {["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(previewTarget.filename.split(".").pop()?.toLowerCase() || "") ? (
-                    <img 
-                      src={previewUrl} 
-                      alt={previewTarget.filename} 
-                      style={{ maxWidth: "100%", maxHeight: "65vh", objectFit: "contain", borderRadius: "8px" }} 
-                    />
-                  ) : ["mp4", "mkv", "mov", "avi", "webm", "ogg"].includes(previewTarget.filename.split(".").pop()?.toLowerCase() || "") ? (
-                    <video 
-                      src={previewUrl} 
-                      controls 
-                      autoPlay 
-                      style={{ maxWidth: "100%", maxHeight: "65vh", borderRadius: "8px" }} 
-                    />
-                  ) : ["txt", "md", "json", "js", "ts", "css", "html", "csv", "xml", "yaml", "yml"].includes(previewTarget.filename.split(".").pop()?.toLowerCase() || "") ? (
-                    <pre style={{ width: "100%", maxHeight: "65vh", overflow: "auto", padding: "16px", backgroundColor: "var(--bg-primary)", borderRadius: "8px", fontSize: "13px", fontFamily: "monospace", textAlign: "left", whiteSpace: "pre-wrap", border: "1px solid var(--border-color)", color: "var(--text-primary)" }}>
-                      {previewTextContent}
-                    </pre>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "32px 16px" }}>
-                      <File size={64} style={{ color: "var(--text-muted)" }} />
-                      <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
-                        No direct preview available for this file type ({previewTarget.mimeType}).
-                      </p>
-                      <button 
-                        onClick={() => {
-                          handleDownloadFile(previewTarget.id);
-                          setPreviewModalOpen(false);
-                          setPreviewTarget(null);
-                        }}
-                        className="btn-primary"
-                        style={{ display: "flex", alignItems: "center", gap: "8px", height: "38px" }}
-                      >
-                        <Download size={16} />
-                        <span>Download File</span>
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* HIDDEN FILE/FOLDER SELECT INPUTS */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        style={{ display: "none" }} 
-        multiple 
-        onChange={handleFileUpload}
-      />
-      <input 
-        type="file" 
-        ref={folderInputRef} 
-        style={{ display: "none" }} 
-        webkitdirectory="true"
-        directory=""
-        multiple 
-        onChange={handleFolderUpload}
-        {...({ webkitdirectory: "", directory: "" } as any)}
-      />
-
-      {/* PLAIN TEXT CREATOR / EDITOR MODAL */}
-      {textModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: "800px", width: "90vw" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
-                {textEditorMode === "create" ? "Create Text File" : "Edit Text File"}
-              </h3>
-            </div>
-            <form onSubmit={handleSaveTextFile} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Filename</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={textFileName}
-                  onChange={(e) => setTextFileName(e.target.value)}
-                  placeholder="e.g. notes.txt"
-                  required
-                  disabled={textEditorMode === "edit"}
-                />
-              </div>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">File Content</label>
-                <textarea 
-                  className="form-input" 
-                  style={{ fontFamily: "monospace", minHeight: "350px", resize: "vertical", fontSize: "14px", lineHeight: "1.5", backgroundColor: "var(--bg-primary)", color: "var(--text-primary)" }}
-                  value={textContent}
-                  onChange={(e) => setTextContent(e.target.value)}
-                  placeholder="Start typing your text here..."
-                  autoFocus
-                />
-              </div>
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setTextModalOpen(false)} 
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Save File
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* QUILL DOCS RICH-TEXT MODAL */}
-      {docsModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: "900px", width: "95vw", maxHeight: "95vh", display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
-                {docsEditorMode === "create" ? "Create Rich Document" : "Edit Rich Document"}
-              </h3>
-            </div>
-            <form onSubmit={handleSaveDocsFile} style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1, overflow: "hidden" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Document Title</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={docTitle}
-                  onChange={(e) => setDocTitle(e.target.value)}
-                  placeholder="e.g. Project Proposal"
-                  required
-                  disabled={docsEditorMode === "edit"}
-                />
-              </div>
-              
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: "350px", overflow: "hidden", backgroundColor: "#fff", color: "#333", borderRadius: "8px" }} className="quill-editor-wrapper">
-                <div ref={editorContainerRef} style={{ flex: 1, overflow: "auto" }} />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setDocsModalOpen(false)} 
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Save Document
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* SPREADSHEET SHEET MODAL */}
-      {sheetModalOpen && (
-        <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: "1000px", width: "95vw", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
-              <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
-                {sheetEditorMode === "create" ? "Create Blank Sheet" : "Edit Spreadsheet"}
-              </h3>
-            </div>
-            <form onSubmit={handleSaveSheetFile} style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1, overflow: "hidden" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Spreadsheet Name</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  value={sheetName}
-                  onChange={(e) => setSheetName(e.target.value)}
-                  placeholder="e.g. Budget 2026"
-                  required
-                  disabled={sheetEditorMode === "edit"}
-                />
-              </div>
-              
-              <div style={{ flex: 1, overflow: "auto", border: "1px solid var(--border-color)", borderRadius: "8px", backgroundColor: "var(--bg-primary)" }} className="sheet-grid-wrapper">
-                <table className="spreadsheet-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: "40px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: "6px", color: "var(--text-secondary)", textAlign: "center", position: "sticky", top: 0 }}>#</th>
-                      {columnsList.map((col) => (
-                        <th key={col} style={{ width: "100px", backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: "6px", color: "var(--text-secondary)", textAlign: "center", position: "sticky", top: 0 }}>{col}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from({ length: rowsCount }).map((_, rIdx) => {
-                      const rowNumber = rIdx + 1;
-                      return (
-                        <tr key={rowNumber}>
-                          <td style={{ backgroundColor: "var(--bg-secondary)", border: "1px solid var(--border-color)", padding: "6px", color: "var(--text-secondary)", fontWeight: "bold", textAlign: "center" }}>{rowNumber}</td>
-                          {columnsList.map((col) => {
-                            const refKey = `${col}${rowNumber}`;
-                            return (
-                              <td key={col} style={{ border: "1px solid var(--border-color)", padding: 0 }}>
-                                <input 
-                                  type="text" 
-                                  style={{ width: "100%", border: "none", outline: "none", padding: "8px", backgroundColor: "transparent", color: "var(--text-primary)", fontSize: "13px", fontFamily: "inherit" }}
-                                  value={sheetCells[refKey] || ""}
-                                  onChange={(e) => handleCellChange(col, rowNumber, e.target.value)}
-                                  placeholder=""
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setSheetModalOpen(false)} 
-                  className="btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn-primary">
-                  Save Sheet
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* FLOATING SELECTION / BULK ACTIONS BAR */}
-      {(selectedAssetIds.size > 0 || selectedFolderIds.size > 0) && (
-        <div className="floating-bulk-bar animate-fade-in-up">
-          <div className="bulk-bar-content">
-            <div className="bulk-selection-count">
-              <span className="count-badge">
-                {selectedAssetIds.size + selectedFolderIds.size}
-              </span>
-              <span>item(s) selected</span>
-            </div>
-
-            <div className="bulk-bar-actions">
-              {explorerMode !== "archive" && (
-                <>
-                  <button 
-                    onClick={() => handleOpenDestinationPicker("copy")}
-                    className="btn-bulk btn-bulk-copy"
-                    title="Copy selected items to a folder"
-                  >
-                    <Copy size={16} />
-                    <span>Copy</span>
-                  </button>
-
-                  <button 
-                    onClick={() => handleOpenDestinationPicker("move")}
-                    className="btn-bulk btn-bulk-move"
-                    title="Move selected items to a folder"
-                  >
-                    <FolderInput size={16} />
-                    <span>Move</span>
-                  </button>
-                </>
-              )}
-
-               {(isAdmin || (
-                Array.from(selectedFolderIds).every(fId => {
-                  const f = folders.find(folder => folder.id === fId);
-                  return f && 'userId' in f && f.userId === currentUserId;
-                }) &&
-                Array.from(selectedAssetIds).every(aId => {
-                  const a = assets.find(asset => asset.id === aId);
-                  return a && 'uploadedById' in a && a.uploadedById === currentUserId;
-                })
-              )) && explorerMode !== "archive" && (
-                <button 
-                  onClick={handleBulkDelete}
-                  className="btn-bulk btn-bulk-delete"
-                  title="Permanently delete selected items"
-                >
-                  <Trash2 size={16} />
-                  <span>Delete</span>
-                </button>
-              )}
-
-              {explorerMode !== "archive" && <div className="bulk-bar-divider" />}
-
-              <button 
-                onClick={handleClearSelection}
-                className="btn-icon bulk-bar-close"
-                title="Clear Selection"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DESTINATION PICKER MODAL */}
-      {destinationPickerOpen && (
-        <div className="modal-overlay" onClick={() => setDestinationPickerOpen(false)}>
-          <div className="modal picker-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "560px", width: "90vw" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-color)", paddingBottom: "12px", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <FolderInput size={22} className="brand-accent" />
-                <h3 style={{ fontSize: "18px", fontWeight: "700" }}>
-                  Select Destination for {pickerAction === "copy" ? "Copy" : "Move"}
-                </h3>
-              </div>
-              <button 
-                onClick={() => setDestinationPickerOpen(false)}
-                className="btn-icon"
-                title="Close Destination Picker"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Drive Toggle Tabs */}
-            <div className="picker-tabs" style={{ display: "flex", gap: "4px", padding: "4px", backgroundColor: "var(--bg-primary)", borderRadius: "8px", border: "1px solid var(--border-color)", marginBottom: "16px" }}>
-              <button
-                type="button"
-                onClick={() => handleTogglePickerDriveMode("personal")}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  borderRadius: "6px",
-                  border: "none",
-                  backgroundColor: pickerDriveMode === "personal" ? "var(--border-color)" : "transparent",
-                  color: pickerDriveMode === "personal" ? "var(--text-primary)" : "var(--text-secondary)",
-                  fontWeight: pickerDriveMode === "personal" ? "600" : "500",
-                  fontSize: "13px",
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-              >
-                My Drive (Personal)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTogglePickerDriveMode("shared")}
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  borderRadius: "6px",
-                  border: "none",
-                  backgroundColor: pickerDriveMode === "shared" ? "var(--border-color)" : "transparent",
-                  color: pickerDriveMode === "shared" ? "var(--text-primary)" : "var(--text-secondary)",
-                  fontWeight: pickerDriveMode === "shared" ? "600" : "500",
-                  fontSize: "13px",
-                  cursor: "pointer",
-                  transition: "all 0.2s"
-                }}
-              >
-                Shared Drive
-              </button>
-            </div>
-
-            {/* Picker Breadcrumbs */}
-            <div className="picker-breadcrumbs" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px", marginBottom: "16px", padding: "8px 12px", background: "var(--bg-primary)", borderRadius: "8px", border: "1px solid var(--border-color)", fontSize: "13px" }}>
-              <span 
-                className={`picker-breadcrumb-item ${pickerFolderPath.length === 0 ? "active" : ""}`}
-                style={{ cursor: "pointer", color: pickerFolderPath.length === 0 ? "var(--brand-accent)" : "var(--text-secondary)", fontWeight: "500" }}
-                onClick={() => handlePickerBreadcrumbClick(-1)}
-              >
-                {pickerDriveMode === "shared" ? "Shared Drive" : "My Drive"}
-              </span>
-              {pickerFolderPath.map((item, index) => (
-                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <ChevronRight size={14} style={{ opacity: 0.5 }} />
-                  <span 
-                    className={`picker-breadcrumb-item ${index === pickerFolderPath.length - 1 ? "active" : ""}`}
-                    style={{ cursor: "pointer", color: index === pickerFolderPath.length - 1 ? "var(--brand-accent)" : "var(--text-secondary)", fontWeight: "500", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}
-                    onClick={() => handlePickerBreadcrumbClick(index)}
-                  >
-                    {item.name}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Picker Directories List */}
-            <div className="picker-dir-container" style={{ minHeight: "260px", maxHeight: "380px", overflowY: "auto", border: "1px solid var(--border-color)", borderRadius: "8px", backgroundColor: "var(--bg-primary)", padding: "8px" }}>
-              {pickerLoading ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", gap: "12px" }}>
-                  <Loader2 className="animate-spin brand-accent" size={28} />
-                  <span style={{ fontSize: "13px", color: "var(--text-secondary)" }}>Loading directories...</span>
-                </div>
-              ) : pickerFolders.length === 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "240px", color: "var(--text-muted)", gap: "8px" }}>
-                  <FolderOpen size={36} style={{ opacity: 0.4 }} />
-                  <span style={{ fontSize: "14px" }}>No folders in this directory</span>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  {pickerFolders.map((folder) => (
-                    <button
-                      key={folder.id}
-                      onClick={() => handlePickerNavigate(folder)}
-                      className="picker-dir-row"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        width: "100%",
-                        padding: "10px 12px",
-                        background: "none",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                        color: "var(--text-primary)",
-                        textAlign: "left",
-                        gap: "10px",
-                        transition: "background 0.2s"
-                      }}
-                    >
-                      <Folder size={18} style={{ color: "var(--brand-accent)", flexShrink: 0 }} />
-                      <span style={{ fontSize: "14px", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {folder.name}
-                      </span>
-                      <ChevronRight size={14} style={{ opacity: 0.5 }} />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Target Display and Triggers */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "20px", paddingTop: "16px", borderTop: "1px solid var(--border-color)" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "2px", maxWidth: "60%" }}>
-                <span style={{ fontSize: "11px", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Target Destination:</span>
-                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {pickerFolderPath.length === 0 
-                    ? (pickerDriveMode === "shared" ? "Shared Drive root" : "My Drive (root)")
-                    : pickerFolderPath[pickerFolderPath.length - 1].name
-                  }
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button 
-                  type="button" 
-                  onClick={() => setDestinationPickerOpen(false)} 
-                  className="btn-secondary"
-                  style={{ height: "38px" }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={handleExecutePickerAction}
-                  className="btn-primary"
-                  style={{ height: "38px", padding: "0 20px" }}
-                >
-                  {pickerAction === "copy" ? "Copy Here" : "Move Here"}
-                </button>
-              </div>
             </div>
           </div>
         </div>
