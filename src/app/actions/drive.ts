@@ -170,7 +170,24 @@ export async function renameProject(projectId: string, newName: string, newClien
 }
 
 export async function deleteProject(projectId: string) {
-  const session = await requireAdmin();
+  const session = await requireApprovedUser();
+  const userRole = (session.user as any).role;
+  const currentUserId = session.user.id;
+
+  // Retrieve the project
+  const [proj] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId));
+
+  if (!proj) {
+    throw new Error("Project not found");
+  }
+
+  // Admin/manager can delete any project. Staff/users can only delete their own.
+  if (userRole !== "admin" && userRole !== "manager" && proj.userId !== currentUserId) {
+    throw new Error("Forbidden");
+  }
 
   // Retrieve all files (assets) mapped to this project
   const allAssets = await db
@@ -224,7 +241,22 @@ export async function createFolder(name: string, projectId?: string, parentId?: 
 }
 
 export async function deleteFolder(folderId: string) {
-  const session = await requireAdmin();
+  const session = await requireApprovedUser();
+  const userRole = (session.user as any).role;
+  const currentUserId = session.user.id;
+
+  const [folder] = await db
+    .select()
+    .from(folders)
+    .where(eq(folders.id, folderId));
+
+  if (!folder) {
+    throw new Error("Folder not found");
+  }
+
+  if (userRole !== "admin" && userRole !== "manager" && folder.userId !== currentUserId) {
+    throw new Error("Forbidden");
+  }
 
   // Recursive helper function to find all subfolder IDs
   async function getAllSubfolderIds(fId: string): Promise<string[]> {
@@ -565,15 +597,16 @@ export async function listDriveContents(params: {
     }
 
     const currentAssets = await db
-      .select({
-        id: assets.id,
-        filename: assets.filename,
-        size: assets.size,
-        mimeType: assets.mimeType,
-        uploadedAt: assets.uploadedAt,
-        uploadedBy: user.name,
-        status: assets.status,
-      })
+       .select({
+         id: assets.id,
+         filename: assets.filename,
+         size: assets.size,
+         mimeType: assets.mimeType,
+         uploadedAt: assets.uploadedAt,
+         uploadedBy: user.name,
+         uploadedById: assets.uploadedBy,
+         status: assets.status,
+       })
       .from(assets)
       .leftJoin(user, eq(assets.uploadedBy, user.id))
       .where(and(...assetConditions))
@@ -585,6 +618,8 @@ export async function listDriveContents(params: {
 
 export async function deleteAsset(assetId: string) {
   const session = await requireApprovedUser();
+  const userRole = (session.user as any).role;
+  const currentUserId = session.user.id;
 
   // Find asset key
   const [asset] = await db
@@ -594,6 +629,10 @@ export async function deleteAsset(assetId: string) {
 
   if (!asset) {
     throw new Error("Asset not found");
+  }
+
+  if (userRole !== "admin" && userRole !== "manager" && asset.uploadedBy !== currentUserId) {
+    throw new Error("Forbidden");
   }
 
   // Delete from R2 S3 bucket
@@ -936,6 +975,42 @@ export async function bulkDeleteItems(params: {
   isSharedDrive?: boolean;
 }) {
   const session = await requireApprovedUser();
+  const userRole = (session.user as any).role;
+  const currentUserId = session.user.id;
+
+  if (!params.isSharedDrive && userRole !== "admin" && userRole !== "manager") {
+    // Verify folders ownership
+    if (params.folderIds.length > 0) {
+      const ownedFolders = await db
+        .select({ id: folders.id })
+        .from(folders)
+        .where(
+          and(
+            inArray(folders.id, params.folderIds),
+            eq(folders.userId, currentUserId)
+          )
+        );
+      if (ownedFolders.length !== params.folderIds.length) {
+        throw new Error("Forbidden: You do not own all selected folders");
+      }
+    }
+
+    // Verify assets ownership
+    if (params.assetIds.length > 0) {
+      const ownedAssets = await db
+        .select({ id: assets.id })
+        .from(assets)
+        .where(
+          and(
+            inArray(assets.id, params.assetIds),
+            eq(assets.uploadedBy, currentUserId)
+          )
+        );
+      if (ownedAssets.length !== params.assetIds.length) {
+        throw new Error("Forbidden: You do not own all selected files");
+      }
+    }
+  }
 
   if (params.isSharedDrive) {
     // Shared Drive deletion (direct S3 physical paths)

@@ -500,7 +500,7 @@ function DrivePageContent() {
           >
             <Edit2 size={12} />
           </button>
-          {isAdmin && (
+          {(isAdmin || proj.userId === session?.user?.id) && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -2755,6 +2755,7 @@ function DrivePageContent() {
   }
 
   const isAdmin = (session?.user as any)?.role === "admin" || (session?.user as any)?.role === "manager";
+  const currentUserId = session?.user?.id;
 
   return (
     <div className="app-container">
@@ -3165,7 +3166,7 @@ function DrivePageContent() {
                           <span>Rename / Edit Project</span>
                         </button>
                         
-                        {isAdmin && (
+                        {(isAdmin || currentOpenProject?.userId === session?.user?.id) && (
                           <button 
                             onClick={() => {
                               setSelectedProjectToDelete(currentOpenProject);
@@ -3538,8 +3539,8 @@ function DrivePageContent() {
 
                         <div className="file-date">Folder</div>
 
-                        <div className="file-actions">
-                          {isAdmin && explorerMode !== "archive" && (
+                         <div className="file-actions">
+                          {(isAdmin || ('userId' in folder && folder.userId === currentUserId)) && explorerMode !== "archive" && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -3604,7 +3605,7 @@ function DrivePageContent() {
                           >
                             <Download size={16} />
                           </button>
-                          {isAdmin && explorerMode !== "archive" && (
+                           {(isAdmin || ('uploadedById' in asset && asset.uploadedById === currentUserId)) && explorerMode !== "archive" && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -3668,7 +3669,7 @@ function DrivePageContent() {
 
                           <Folder className="folder-icon" size={24} />
                           <span className="folder-name">{folder.name}</span>
-                          {isAdmin && explorerMode !== "archive" && (
+                           {(isAdmin || ('userId' in folder && folder.userId === currentUserId)) && explorerMode !== "archive" && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -3765,7 +3766,7 @@ function DrivePageContent() {
                           >
                             <Download size={14} />
                           </button>
-                          {isAdmin && explorerMode !== "archive" && (
+                           {(isAdmin || ('uploadedById' in asset && asset.uploadedById === currentUserId)) && explorerMode !== "archive" && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -4643,7 +4644,7 @@ function DrivePageContent() {
                 <LinkIcon size={16} />
                 <span>Copy Share Link</span>
               </button>
-              {isAdmin && explorerMode !== "archive" && (
+               {(isAdmin || (contextMenu && contextMenu.item && 'userId' in contextMenu.item && contextMenu.item.userId === currentUserId)) && explorerMode !== "archive" && (
                 <button 
                   onClick={() => {
                     handleDeleteFolder(contextMenu.item.id, contextMenu.item.name);
@@ -4742,7 +4743,7 @@ function DrivePageContent() {
                 <Info size={16} />
                 <span>Get Info</span>
               </button>
-              {isAdmin && explorerMode !== "archive" && (
+               {(isAdmin || (contextMenu && contextMenu.item && 'uploadedById' in contextMenu.item && contextMenu.item.uploadedById === currentUserId)) && explorerMode !== "archive" && (
                 <button 
                   onClick={() => {
                     handleDeleteFile(contextMenu.item.id);
@@ -5170,7 +5171,16 @@ function DrivePageContent() {
                 </>
               )}
 
-              {isAdmin && explorerMode !== "archive" && (
+               {(isAdmin || (
+                Array.from(selectedFolderIds).every(fId => {
+                  const f = folders.find(folder => folder.id === fId);
+                  return f && 'userId' in f && f.userId === currentUserId;
+                }) &&
+                Array.from(selectedAssetIds).every(aId => {
+                  const a = assets.find(asset => asset.id === aId);
+                  return a && 'uploadedById' in a && a.uploadedById === currentUserId;
+                })
+              )) && explorerMode !== "archive" && (
                 <button 
                   onClick={handleBulkDelete}
                   className="btn-bulk btn-bulk-delete"
