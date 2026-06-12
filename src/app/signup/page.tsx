@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { authClient } from "@/lib/auth-client";
-import { getGoogleSignInErrorMessage, signInWithGoogle } from "@/lib/google-sign-in";
+import { getGoogleSignInErrorMessage, isGoogleSignInCancelled, signInWithGoogle } from "@/lib/google-sign-in";
 import { useRouter, useSearchParams } from "next/navigation";
 import { validateInviteToken, claimInviteToken, verifyEmailOTP } from "@/app/actions/auth";
 import Link from "next/link";
@@ -105,6 +105,10 @@ function SignupForm() {
         router.refresh();
       }
     } catch (err) {
+      if (isGoogleSignInCancelled(err)) {
+        return;
+      }
+
       setError(getGoogleSignInErrorMessage(err));
     } finally {
       setGoogleLoading(false);

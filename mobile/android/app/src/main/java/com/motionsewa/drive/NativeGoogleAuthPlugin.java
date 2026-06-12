@@ -1,8 +1,10 @@
 package com.motionsewa.drive;
 
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.net.Uri;
 import android.os.CancellationSignal;
+import android.util.Log;
 import androidx.activity.result.ActivityResult;
 import androidx.credentials.Credential;
 import androidx.credentials.CredentialManager;
@@ -32,6 +34,7 @@ import java.util.concurrent.Executors;
 
 @CapacitorPlugin(name = "NativeGoogleAuth")
 public class NativeGoogleAuthPlugin extends Plugin {
+    private static final String TAG = "NativeGoogleAuth";
     private final Executor executor = Executors.newSingleThreadExecutor();
     private CancellationSignal activeCancellationSignal;
     private String activeServerClientId;
@@ -46,6 +49,7 @@ public class NativeGoogleAuthPlugin extends Plugin {
         }
 
         activeServerClientId = serverClientId;
+        logGoogleConfig(serverClientId);
 
         getActivity().runOnUiThread(() -> {
             activeCancellationSignal = new CancellationSignal();
@@ -105,6 +109,25 @@ public class NativeGoogleAuthPlugin extends Plugin {
         call.resolve();
     }
 
+    @PluginMethod
+    public void signOut(PluginCall call) {
+        if (activeCancellationSignal != null) {
+            activeCancellationSignal.cancel();
+            activeCancellationSignal = null;
+        }
+
+        getActivity().runOnUiThread(() -> {
+            GoogleSignInOptions signInOptions = new GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                    .requestEmail()
+                    .build();
+
+            GoogleSignInClient client = GoogleSignIn.getClient(getActivity(), signInOptions);
+            client.signOut()
+                    .addOnSuccessListener(unused -> call.resolve())
+                    .addOnFailureListener(error -> call.reject("Failed to sign out from native Google Sign-In.", error));
+        });
+    }
+
     private void launchLegacyGooglePicker(PluginCall call, String serverClientId) {
         getActivity().runOnUiThread(() -> {
             // Fallback for devices/emulators where Credential Manager reports no eligible credential.
@@ -148,6 +171,7 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 ret.put("profilePictureUri", photoUrl.toString());
             }
 
+            addDiagnostics(ret);
             call.resolve(ret);
         } catch (ApiException e) {
             if (e.getStatusCode() == 12501) {
@@ -155,7 +179,13 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 return;
             }
 
-            call.reject("Google sign-in failed. Check the Android OAuth client package name and SHA-1/SHA-256 fingerprints.", e);
+            call.reject(
+                    "Google sign-in failed for package " + getContext().getPackageName() +
+                            " (" + getBuildType() + "). Check the Android OAuth client package name and SHA-1/SHA-256 fingerprints. Status code: " +
+                            e.getStatusCode(),
+                    "GOOGLE_ANDROID_CONFIG_ERROR",
+                    e
+            );
         }
     }
 
@@ -187,9 +217,34 @@ public class NativeGoogleAuthPlugin extends Plugin {
                 ret.put("profilePictureUri", profilePictureUri.toString());
             }
 
+            addDiagnostics(ret);
             call.resolve(ret);
         } catch (Exception e) {
             call.reject("Failed to parse Google ID token.", e);
         }
+    }
+
+    private void addDiagnostics(JSObject ret) {
+        ret.put("packageName", getContext().getPackageName());
+        ret.put("buildType", getBuildType());
+        ret.put("serverClientId", activeServerClientId);
+    }
+
+    private void logGoogleConfig(String serverClientId) {
+        if (!isDebugBuild()) {
+            return;
+        }
+
+        Log.d(TAG, "Google Sign-In config: packageName=" + getContext().getPackageName() +
+                ", buildType=" + getBuildType() +
+                ", serverClientId=" + serverClientId);
+    }
+
+    private String getBuildType() {
+        return isDebugBuild() ? "debug" : "release";
+    }
+
+    private boolean isDebugBuild() {
+        return (getContext().getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 }

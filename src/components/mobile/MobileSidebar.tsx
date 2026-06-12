@@ -17,7 +17,7 @@ interface MobileSidebarProps {
   isAdmin: boolean;
   storageStats: any;
   setShowDetailedUsageModal: (open: boolean) => void;
-  handleSignOut: () => void;
+  handleSignOut: () => void | Promise<void>;
   setParams: (params: Record<string, string | null | undefined>) => void;
 }
 
@@ -95,7 +95,7 @@ export function MobileSidebar({
           </button>
         </div>
 
-        <nav className="nav-links">
+        <nav className="nav-links mobile-sidebar-nav">
           <button 
             onClick={() => {
               setParams({ mode: "links", projectId: null, folderId: null, path: null });
@@ -119,31 +119,57 @@ export function MobileSidebar({
           )}
         </nav>
 
-        {storageStats && (
-          <MobileStorageCard
-            storageStats={storageStats}
-            onOpenAnalytics={() => {
-              setShowDetailedUsageModal(true);
-              onClose();
-            }}
-          />
-        )}
-
-        <div className="sidebar-user">
-          <div className="user-avatar">{session.user.name?.charAt(0)}</div>
-          <div className="user-info">
-            <div className="user-name">{session.user.name}</div>
-            <div className="user-role">{(session.user as any).role}</div>
+        <div className="mobile-sidebar-bottom">
+          <div className="sidebar-user mobile-sidebar-user">
+            <div className="user-avatar">{session.user.name?.charAt(0)}</div>
+            <div className="user-info">
+              <div className="user-name">{session.user.name}</div>
+              <div className="user-role">{(session.user as any).role}</div>
+            </div>
           </div>
-          <button onClick={handleSignOut} className="btn-signout" title="Sign Out">
-            <LogOut size={16} />
+
+          {storageStats && (
+            <MobileStorageCard
+              storageStats={storageStats}
+              onOpenAnalytics={() => {
+                setShowDetailedUsageModal(true);
+                onClose();
+              }}
+            />
+          )}
+
+          <button
+            type="button"
+            className="mobile-logout-button"
+            onClick={() => {
+              onClose();
+              void handleSignOut();
+            }}
+          >
+            <LogOut size={17} />
+            <span>Logout</span>
           </button>
         </div>
       </aside>
 
       <style>{`
         .mobile-sidebar {
-          padding-bottom: calc(18px + env(safe-area-inset-bottom));
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          padding-bottom: calc(16px + env(safe-area-inset-bottom));
+        }
+
+        .mobile-sidebar-nav {
+          flex: 0 0 auto;
+          overflow-y: visible;
+        }
+
+        .mobile-sidebar-bottom {
+          margin-top: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
         }
 
         .mobile-storage-card {
@@ -151,7 +177,7 @@ export function MobileSidebar({
           display: flex;
           flex-direction: column;
           gap: 10px;
-          margin: 14px 0 12px;
+          margin: 0;
           padding: 14px;
           border-radius: 18px;
           border: 1px solid rgba(255, 255, 255, 0.1);
@@ -248,6 +274,37 @@ export function MobileSidebar({
           color: #c7d2fe;
           font-size: 12px;
           font-weight: 700;
+        }
+
+        .mobile-logout-button {
+          width: 100%;
+          min-height: 46px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(248, 113, 113, 0.2);
+          background: rgba(239, 68, 68, 0.08);
+          color: #fca5a5;
+          font-size: 14px;
+          font-weight: 700;
+          transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+        }
+
+        .mobile-logout-button:hover {
+          border-color: rgba(248, 113, 113, 0.34);
+          background: rgba(239, 68, 68, 0.12);
+          color: #fecaca;
+        }
+
+        .mobile-logout-button:active {
+          transform: scale(0.985);
+          background: rgba(239, 68, 68, 0.16);
+        }
+
+        .mobile-sidebar-user {
+          margin-top: 2px;
         }
       `}</style>
     </>
