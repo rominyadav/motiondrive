@@ -325,30 +325,94 @@ export async function downloadFileNative(params: {
 
   // B. CAPACITOR (ANDROID) DOWNLOAD IMPLEMENTATION
   if (isCapacitor()) {
-    try {
-      const { Capacitor } = await import("@capacitor/core");
-      const platform = Capacitor.getPlatform();
+    const { Capacitor, registerPlugin } = await import("@capacitor/core");
+    const platform = Capacitor.getPlatform();
 
-      if (platform === "android") {
-        const { registerPlugin } = await import("@capacitor/core");
-        const ProgressNotification = registerPlugin<any>("ProgressNotification");
+    if (platform === "android") {
+      console.log("[Native Bridge] Using NativeDownload plugin for Android");
+      const NativeDownload = registerPlugin<any>("NativeDownload");
+      const { updateTransferNotification, dismissTransferNotification } = await import("./mobile-notifications");
 
-        const result = await ProgressNotification.downloadFile({
+      let lastNotificationUpdate = 0;
+      const NOTIFICATION_THROTTLE_MS = 500;
+
+      // Set up progress tracking listener
+      const progressListener = await NativeDownload.addListener("progress", (data: any) => {
+        console.log("[Native Bridge] Progress:", data.bytesDownloaded, "/", data.totalBytes);
+        params.onProgress(data.bytesDownloaded, data.totalBytes);
+
+        // Update notification
+        const now = Date.now();
+        if (now - lastNotificationUpdate > NOTIFICATION_THROTTLE_MS || data.bytesDownloaded === data.totalBytes) {
+          updateTransferNotification({
+            key: params.filename,
+            title: params.filename,
+            type: "download",
+            bytesTransferred: data.bytesDownloaded,
+            totalBytes: data.totalBytes,
+          }).catch(() => {});
+          lastNotificationUpdate = now;
+        }
+      });
+
+      // Handle abort signal
+      let abortHandler: (() => void) | null = null;
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (params.signal) {
+          abortHandler = async () => {
+            try {
+              await NativeDownload.cancelDownload({ filename: params.filename });
+              const { dismissTransferNotification } = await import("./mobile-notifications");
+              await dismissTransferNotification(params.filename);
+            } catch (err) {
+              console.error("[Native Bridge] cancelDownload failed:", err);
+            }
+            reject(new DOMException("Download aborted", "AbortError"));
+          };
+          params.signal.addEventListener("abort", abortHandler);
+        }
+      });
+
+      const downloadPromise = (async () => {
+        const result = await NativeDownload.downloadFile({
           url: params.url,
           filename: params.filename,
         });
-
-        // Resolve progress to 100% since DownloadManager handles notifications/downloads in background
-        if (params.knownSize) {
-          params.onProgress(params.knownSize, params.knownSize);
-        } else {
-          params.onProgress(100, 100);
-        }
-
         return result.path;
-      }
+      })();
 
-      // iOS or fallback implementation
+      try {
+        const result = await Promise.race([downloadPromise, abortPromise]);
+        progressListener.remove();
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
+        
+        // Finalize notification as completed
+        await updateTransferNotification({
+          key: params.filename,
+          title: params.filename,
+          type: "download",
+          bytesTransferred: params.knownSize || 0,
+          totalBytes: params.knownSize || 0,
+        }).catch(() => {});
+        
+        return result;
+      } catch (err) {
+        progressListener.remove();
+        if (params.signal && abortHandler) {
+          params.signal.removeEventListener("abort", abortHandler);
+        }
+        
+        // Dismiss notification on error
+        await dismissTransferNotification(params.filename).catch(() => {});
+        
+        throw err;
+      }
+    }
+
+    // iOS implementation
+    try {
       const { Filesystem, Directory } = await import("@capacitor/filesystem");
       const { BackgroundTask } = await import("@capawesome/capacitor-background-task");
       const { updateTransferNotification, dismissTransferNotification } = await import("./mobile-notifications");

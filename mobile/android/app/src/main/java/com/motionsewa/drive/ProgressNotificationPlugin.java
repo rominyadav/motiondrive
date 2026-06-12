@@ -3,7 +3,9 @@ package com.motionsewa.drive;
 import android.Manifest;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.drawable.BitmapDrawable;
@@ -27,6 +29,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Environment;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -68,7 +71,8 @@ public class ProgressNotificationPlugin extends Plugin {
                         int statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS);
                         int status = cursor.getInt(statusIndex);
                         if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                            File destinationFile = new File(getContext().getExternalFilesDir(null), filename);
+                            File motionDriveDir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Motion Drive");
+                            File destinationFile = new File(motionDriveDir, filename);
                             JSObject ret = new JSObject();
                             ret.put("path", destinationFile.getAbsolutePath());
                             call.resolve(ret);
@@ -125,40 +129,25 @@ public class ProgressNotificationPlugin extends Plugin {
     }
 
     /**
-     * NATIVE DOWNLOAD METHOD
-     * This runs via Android's system DownloadManager and is completely immune to app minimization.
+     * DEPRECATED - Use NativeDownload plugin instead
+     * This method is disabled to prevent accidental use of DownloadManager
      */
     @PluginMethod
     public void downloadFile(PluginCall call) {
-        String urlString = call.getString("url");
-        String filename = call.getString("filename");
-
-        if (urlString == null || filename == null) {
-            call.reject("URL and filename are required");
-            return;
-        }
-
-        try {
-            File destinationFile = new File(getContext().getExternalFilesDir(null), filename);
-            if (destinationFile.exists()) {
-                destinationFile.delete();
-            }
-
-            DownloadManager.Request request = new DownloadManager.Request(Uri.parse(urlString));
-            request.setTitle(filename);
-            request.setDescription("Downloading file...");
-            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
-            request.setDestinationInExternalFilesDir(getContext(), null, filename);
-
-            long downloadId = downloadManager.enqueue(request);
-            activeDownloads.put(downloadId, call);
-            downloadFilenames.put(downloadId, filename);
-        } catch (Exception e) {
-            call.reject("Failed to enqueue download: " + e.getMessage());
-        }
+        call.reject("This method is deprecated. Use NativeDownload plugin instead.");
     }
 
     private void updateNotificationInternal(String title, String text, int progress, int max, int id) {
+        // Create intent to open the app when notification is clicked
+        Intent intent = new Intent(getContext(), MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pendingIntent = PendingIntent.getActivity(getContext(), id, intent, flags);
+
         NotificationCompat.Builder builder = new NotificationCompat.Builder(getContext(), CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setContentTitle(title)
@@ -167,6 +156,8 @@ public class ProgressNotificationPlugin extends Plugin {
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setSilent(true)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(false)
                 .setProgress(max, progress, (max <= 0));
 
         try {
