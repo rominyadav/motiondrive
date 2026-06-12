@@ -276,37 +276,41 @@ export default function AdminPage() {
             <button 
               className={`admin-tab ${activeTab === "users" ? "active" : ""}`}
               onClick={() => setActiveTab("users")}
+              title="Users Directory"
             >
               <Users size={16} />
-              <span>Users Directory</span>
+              <span>Users</span>
             </button>
             <button 
               className={`admin-tab ${activeTab === "invites" ? "active" : ""}`}
               onClick={() => setActiveTab("invites")}
+              title="Invitations & Access"
             >
               <Mail size={16} />
-              <span>Invitations & Access</span>
+              <span>Invites</span>
             </button>
             {isAdmin ? (
               <button 
                 className={`admin-tab ${activeTab === "shared_links" ? "active" : ""}`}
                 onClick={() => setActiveTab("shared_links")}
+                title="Global Shared Links"
               >
                 <Share2 size={16} />
-                <span>Global Shared Links</span>
+                <span>Links</span>
               </button>
             ) : (
               <div className="admin-tab" style={{ opacity: 0.4, cursor: "not-allowed" }} title="Administrators only">
                 <Lock size={14} />
-                <span>Shared Links (Restricted)</span>
+                <span>Links</span>
               </div>
             )}
             <button 
               className={`admin-tab ${activeTab === "usage" ? "active" : ""}`}
               onClick={() => setActiveTab("usage")}
+              title="System Storage & Usage"
             >
               <Activity size={16} />
-              <span>System Storage & Usage</span>
+              <span>Usage</span>
             </button>
           </div>
         </div>
