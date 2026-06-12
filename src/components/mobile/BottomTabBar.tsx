@@ -17,22 +17,26 @@ export function BottomTabBar({ activeTab, onTabChange }: BottomTabBarProps) {
   ];
 
   return (
-    <div className="bottom-tab-bar">
-      {tabs.map((tab) => {
-        const Icon = tab.icon;
-        const isActive = activeTab === tab.id || (activeTab === "personal" && tab.id === "personal");
-        
-        return (
-          <button
-            key={tab.id}
-            className={`bottom-tab ${isActive ? "active" : ""}`}
-            onClick={() => onTabChange(tab.id)}
-          >
-            <Icon size={22} strokeWidth={isActive ? 2.5 : 2} />
-            <span className="tab-label">{tab.label}</span>
-          </button>
-        );
-      })}
-    </div>
+    <nav className="bottom-tab-bar" aria-label="Drive sections">
+      <div className="bottom-tab-grid">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id || (activeTab === "personal" && tab.id === "personal");
+
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={`bottom-tab ${isActive ? "active" : ""}`}
+              onClick={() => onTabChange(tab.id)}
+              aria-current={isActive ? "page" : undefined}
+            >
+              <Icon size={21} strokeWidth={isActive ? 2.5 : 2} />
+              <span className="tab-label">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }

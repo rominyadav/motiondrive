@@ -9,7 +9,8 @@ body.capacitor-app .bottom-tab-bar {
 }
 
 body.capacitor-app .fab-container {
-  display: block !important;
+  display: none !important;
+  bottom: calc(88px + env(safe-area-inset-bottom));
 }
 
 body.capacitor-app .mobile-header {
@@ -27,22 +28,41 @@ body.capacitor-app .mobile-top-header {
 
 /* Adjust main content for bottom tabs in Capacitor app */
 body.capacitor-app .main-content {
-  padding-bottom: 72px;
+  padding: 0 0 calc(88px + env(safe-area-inset-bottom));
 }
 
 body.capacitor-app .explorer {
-  padding: 16px;
+  margin-top: 0;
+  padding: 24px 16px calc(88px + env(safe-area-inset-bottom));
+}
+
+body.capacitor-app .files-container {
+  padding-bottom: 0;
+}
+
+body.capacitor-app .folder-card,
+body.capacitor-app .file-row {
+  border-radius: 16px;
+}
+
+body.capacitor-app .file-name,
+body.capacitor-app .folder-name,
+body.capacitor-app .file-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Adjust transfer drawer position in Capacitor app */
 body.capacitor-app .progress-drawer,
 body.capacitor-app .upload-minimized-pill {
-  bottom: 88px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
 }
 
 /* Adjust bulk action bar in Capacitor app */
 body.capacitor-app .floating-bulk-bar {
-  bottom: 88px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
 }
 
 /* Sidebar becomes overlay in Capacitor app */

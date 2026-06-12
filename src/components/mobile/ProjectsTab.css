@@ -47,7 +47,7 @@
 .mobile-projects-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 16px 16px calc(88px + env(safe-area-inset-bottom));
 }
 
 /* Project Sections */

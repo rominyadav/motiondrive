@@ -11,12 +11,19 @@ import {
   X,
   Loader2
 } from "lucide-react";
-import { Project, User } from "@/types/drive";
+import { Project } from "@/types/drive";
+
+type ProjectShareUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "staff";
+};
 
 interface ProjectsTabProps {
   projects: Project[];
   currentUserId: string;
-  users: User[];
+  users: ProjectShareUser[];
   onCreateProject: (name: string, clientName: string, sharedWith: string) => Promise<void>;
   onEditProject: (id: string, name: string, clientName: string, sharedWith: string) => Promise<void>;
   onDeleteProject: (id: string) => Promise<void>;
@@ -321,7 +328,7 @@ function ProjectFormModal({
 }: {
   isEdit: boolean;
   project: Project | null;
-  users: User[];
+  users: ProjectShareUser[];
   currentUserId: string;
   onClose: () => void;
   onSubmit: (name: string, clientName: string, sharedWith: string) => Promise<void>;
@@ -469,7 +476,7 @@ function ShareProjectModal({
   onSave
 }: {
   project: Project;
-  users: User[];
+  users: ProjectShareUser[];
   currentUserId: string;
   onClose: () => void;
   onSave: (sharedWith: string) => Promise<void>;

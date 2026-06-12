@@ -40,7 +40,7 @@ import { DriveExplorer } from "@/components/drive/DriveExplorer";
 import { TransferDrawer } from "@/components/drive/TransferDrawer";
 
 // Mobile components
-import { BottomTabBar, MobileHeader, FloatingActionButton, ProjectPickerModal, MobileSidebar, ProjectsTab } from "@/components/mobile";
+import { BottomTabBar, MobileHeader, MobileSidebar, ProjectsTab } from "@/components/mobile";
 import "@/components/mobile/ProjectsTab.css";
 import { MobileTab, useMobileTabs } from "@/hooks/mobile/useMobileTabs";
 import { useCapacitorClass } from "@/hooks/mobile/useCapacitorClass";
@@ -701,6 +701,12 @@ function DrivePageContent() {
     setShowMobileProjectsTab(false);
   };
 
+  const showCreateButton = !showMobileProjectsTab && explorerMode === "personal";
+  const mobileItemCount = filteredFolders.length + filteredAssets.length;
+  const mobileSubtitle = explorerMode === "shared"
+    ? "Files shared with you"
+    : `${mobileItemCount} ${mobileItemCount === 1 ? "item" : "items"}`;
+
   return (
     <div className="app-container">
       {/* SIDEBAR BACKDROP FOR MOBILE */}
@@ -756,107 +762,154 @@ function DrivePageContent() {
         setArchiveProjsLimit={setArchiveProjsLimit}
       />
 
+      {isMobileApp && !showMobileProjectsTab && (
+        <>
+          <MobileHeader 
+            onMenuOpen={() => setSidebarOpen(true)}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            title={getMobileTitle()}
+            subtitle={mobileSubtitle}
+            userInitial={session?.user?.name?.charAt(0) || "U"}
+            showNewButton={showCreateButton}
+            onUploadFile={triggerFileSelect}
+            onUploadFolder={triggerFolderSelect}
+            onCreateFolder={() => setFolderModalOpen(true)}
+            onCreateTextFile={handleOpenTextCreator}
+            onCreateDocsFile={handleOpenDocsCreator}
+            onCreateSheetFile={handleOpenSheetCreator}
+          />
+
+          <MobileSidebar
+            session={session}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            explorerMode={explorerMode}
+            isAdmin={isAdmin}
+            storageStats={storageStats}
+            setShowDetailedUsageModal={setShowDetailedUsageModal}
+            handleSignOut={handleSignOut}
+            setParams={setParams}
+          />
+        </>
+      )}
+
       <main className="main-content">
-        <Navbar
-          session={session}
-          setSidebarOpen={setSidebarOpen}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          explorerMode={explorerMode}
-          viewMode={viewMode}
-          changeViewMode={changeViewMode}
-        />
+        {isMobileApp && showMobileProjectsTab ? (
+          <ProjectsTab
+            projects={projects}
+            currentUserId={session?.user?.id || ""}
+            users={approvedUsers}
+            onCreateProject={handleMobileCreateProject}
+            onEditProject={handleMobileEditProject}
+            onDeleteProject={handleMobileDeleteProject}
+            onSelectProject={handleMobileSelectProject}
+          />
+        ) : (
+          <>
+            <Navbar
+              session={session}
+              setSidebarOpen={setSidebarOpen}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              explorerMode={explorerMode}
+              viewMode={viewMode}
+              changeViewMode={changeViewMode}
+            />
 
-        <DriveExplorer
-          explorerMode={explorerMode}
-          selectedProjectId={selectedProjectId}
-          currentFolderId={currentFolderId}
-          rawPath={rawPath}
-          folderPath={folderPath}
-          projects={projects}
-          session={session}
-          isAdmin={isAdmin}
-          contentsLoading={contentsLoading}
+            <DriveExplorer
+              explorerMode={explorerMode}
+              selectedProjectId={selectedProjectId}
+              currentFolderId={currentFolderId}
+              rawPath={rawPath}
+              folderPath={folderPath}
+              projects={projects}
+              session={session}
+              isAdmin={isAdmin}
+              contentsLoading={contentsLoading}
 
-          pendingDeleteIds={pendingDeleteIds}
-          pendingMoveIds={pendingMoveIds}
-          isCreatingFolder={isCreatingFolder}
-          newFolderName={newFolderName}
-          isSavingTextFile={isSavingTextFile}
-          textFileName={textFileName}
-          isSavingDocsFile={isSavingDocsFile}
-          docTitle={docTitle}
-          isSavingSheetFile={isSavingSheetFile}
-          sheetName={sheetName}
-          isRenamingProject={isRenamingProject}
-          isDeletingProject={isDeletingProject}
-          selectedProjectToEdit={selectedProjectToEdit}
-          selectedProjectToDelete={selectedProjectToDelete}
-          sharedFolderPath={sharedFolderPath}
-          archiveFolderPath={archiveFolderPath}
-          sharedLinksList={sharedLinksList}
-          sharedLinksLoading={sharedLinksLoading}
-          viewMode={viewMode}
-          searchQuery={searchQuery}
+              pendingDeleteIds={pendingDeleteIds}
+              pendingMoveIds={pendingMoveIds}
+              isCreatingFolder={isCreatingFolder}
+              newFolderName={newFolderName}
+              isSavingTextFile={isSavingTextFile}
+              textFileName={textFileName}
+              isSavingDocsFile={isSavingDocsFile}
+              docTitle={docTitle}
+              isSavingSheetFile={isSavingSheetFile}
+              sheetName={sheetName}
+              isRenamingProject={isRenamingProject}
+              isDeletingProject={isDeletingProject}
+              selectedProjectToEdit={selectedProjectToEdit}
+              selectedProjectToDelete={selectedProjectToDelete}
+              sharedFolderPath={sharedFolderPath}
+              archiveFolderPath={archiveFolderPath}
+              sharedLinksList={sharedLinksList}
+              sharedLinksLoading={sharedLinksLoading}
+              viewMode={viewMode}
+              searchQuery={searchQuery}
           
-          newDropdownOpen={newDropdownOpen}
-          setNewDropdownOpen={setNewDropdownOpen}
-          newDropdownRef={newDropdownRef}
+              newDropdownOpen={newDropdownOpen}
+              setNewDropdownOpen={setNewDropdownOpen}
+              newDropdownRef={newDropdownRef}
 
-          projectHeaderMenuOpen={projectHeaderMenuOpen}
-          setProjectHeaderMenuOpen={setProjectHeaderMenuOpen}
-          projectHeaderRef={projectHeaderRef}
+              projectHeaderMenuOpen={projectHeaderMenuOpen}
+              setProjectHeaderMenuOpen={setProjectHeaderMenuOpen}
+              projectHeaderRef={projectHeaderRef}
 
-          selectedAssetIds={selectedAssetIds}
-          selectedFolderIds={selectedFolderIds}
-          handleToggleAssetSelection={handleToggleAssetSelection}
-          handleToggleFolderSelection={handleToggleFolderSelection}
-          isAllSelected={isAllSelected}
-          handleSelectAll={handleSelectAll}
-          handleClearSelection={handleClearSelection}
+              selectedAssetIds={selectedAssetIds}
+              selectedFolderIds={selectedFolderIds}
+              handleToggleAssetSelection={handleToggleAssetSelection}
+              handleToggleFolderSelection={handleToggleFolderSelection}
+              isAllSelected={isAllSelected}
+              handleSelectAll={handleSelectAll}
+              handleClearSelection={handleClearSelection}
 
-          filteredFolders={filteredFolders}
-          filteredAssets={filteredAssets}
+              filteredFolders={filteredFolders}
+              filteredAssets={filteredAssets}
 
-          handleBreadcrumbClick={handleBreadcrumbClick}
-          handleBreadcrumbClickShared={handleBreadcrumbClickShared}
-          handleBreadcrumbClickArchive={handleBreadcrumbClickArchive}
-          navigateToFolder={navigateToFolder}
+              handleBreadcrumbClick={handleBreadcrumbClick}
+              handleBreadcrumbClickShared={handleBreadcrumbClickShared}
+              handleBreadcrumbClickArchive={handleBreadcrumbClickArchive}
+              navigateToFolder={navigateToFolder}
 
-          setSelectedProjectToEdit={setSelectedProjectToEdit}
-          setEditProjectName={setEditProjectName}
-          setEditProjectClient={setEditProjectClient}
-          setEditShareWithAll={setEditShareWithAll}
-          setEditSelectedUserIds={setEditSelectedUserIds}
-          setRenameProjectModalOpen={setRenameProjectModalOpen}
-          setSelectedProjectToDelete={setSelectedProjectToDelete}
-          setDeleteProjectModalOpen={setDeleteProjectModalOpen}
+              setSelectedProjectToEdit={setSelectedProjectToEdit}
+              setEditProjectName={setEditProjectName}
+              setEditProjectClient={setEditProjectClient}
+              setEditShareWithAll={setEditShareWithAll}
+              setEditSelectedUserIds={setEditSelectedUserIds}
+              setRenameProjectModalOpen={setRenameProjectModalOpen}
+              setSelectedProjectToDelete={setSelectedProjectToDelete}
+              setDeleteProjectModalOpen={setDeleteProjectModalOpen}
 
-          setFolderModalOpen={setFolderModalOpen}
+              setFolderModalOpen={setFolderModalOpen}
 
-          handleOpenTextCreator={handleOpenTextCreator}
-          handleOpenDocsCreator={handleOpenDocsCreator}
-          handleOpenSheetCreator={handleOpenSheetCreator}
+              handleOpenTextCreator={handleOpenTextCreator}
+              handleOpenDocsCreator={handleOpenDocsCreator}
+              handleOpenSheetCreator={handleOpenSheetCreator}
 
-          fileInputRef={fileInputRef}
-          folderInputRef={folderInputRef}
-          triggerFileSelect={triggerFileSelect}
-          triggerFolderSelect={triggerFolderSelect}
+              fileInputRef={fileInputRef}
+              folderInputRef={folderInputRef}
+              triggerFileSelect={triggerFileSelect}
+              triggerFolderSelect={triggerFolderSelect}
 
-          handleDeleteFolder={handleDeleteFolder}
-          handleDeleteFile={handleDeleteFile}
-          handleDownloadFile={handleDownloadFile}
-          handleContextMenu={handleContextMenu}
+              handleDeleteFolder={handleDeleteFolder}
+              handleDeleteFile={handleDeleteFile}
+              handleDownloadFile={handleDownloadFile}
+              handleContextMenu={handleContextMenu}
 
-          handleBulkDelete={handleBulkDelete}
-          handleBulkMove={handleBulkMove}
-          handleBulkCopy={handleBulkCopy}
+              handleBulkDelete={handleBulkDelete}
+              handleBulkMove={handleBulkMove}
+              handleBulkCopy={handleBulkCopy}
 
-          extendSharedLink={extendSharedLink}
-          revokeSharedLink={revokeSharedLink}
-          refetchSharedLinks={refetchSharedLinks}
-          showToast={showToast}
-        />
+              extendSharedLink={extendSharedLink}
+              revokeSharedLink={revokeSharedLink}
+              refetchSharedLinks={refetchSharedLinks}
+              showToast={showToast}
+              hideChrome={isMobileApp}
+            />
+          </>
+        )}
       </main>
 
       <TransferDrawer
@@ -1138,50 +1191,6 @@ function DrivePageContent() {
       {/* MOBILE UI COMPONENTS - ONLY FOR CAPACITOR APP */}
       {isMobileApp && (
         <>
-          {!showMobileProjectsTab ? (
-            <>
-              <MobileHeader 
-                onMenuOpen={() => setSidebarOpen(true)}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                title={getMobileTitle()}
-                userInitial={session?.user?.name?.charAt(0) || "U"}
-              />
-
-              <MobileSidebar
-                session={session}
-                isOpen={sidebarOpen}
-                onClose={() => setSidebarOpen(false)}
-                explorerMode={explorerMode}
-                isAdmin={isAdmin}
-                storageStats={storageStats}
-                setShowDetailedUsageModal={setShowDetailedUsageModal}
-                handleSignOut={handleSignOut}
-                setParams={setParams}
-              />
-
-              <FloatingActionButton
-                onUploadFile={triggerFileSelect}
-                onUploadFolder={triggerFolderSelect}
-                onCreateFolder={() => setFolderModalOpen(true)}
-                onCreateTextFile={handleOpenTextCreator}
-                onCreateDocsFile={handleOpenDocsCreator}
-                onCreateSheetFile={handleOpenSheetCreator}
-                disabled={explorerMode === "links" || explorerMode === "shared" || explorerMode === "archive"}
-              />
-            </>
-          ) : (
-            <ProjectsTab
-              projects={projects}
-              currentUserId={session?.user?.id || ""}
-              users={approvedUsers}
-              onCreateProject={handleMobileCreateProject}
-              onEditProject={handleMobileEditProject}
-              onDeleteProject={handleMobileDeleteProject}
-              onSelectProject={handleMobileSelectProject}
-            />
-          )}
-
           <BottomTabBar 
             activeTab={activeTab} 
             onTabChange={handleMobileTabChange} 
