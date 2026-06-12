@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(ProgressNotificationPlugin.class);
         registerPlugin(NativeUploadPlugin.class);
+        registerPlugin(NativeDownloadPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
