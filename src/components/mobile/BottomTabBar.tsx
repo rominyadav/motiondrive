@@ -1,17 +1,18 @@
 import React from "react";
 import { LayoutGrid, Share2, Folder, Archive } from "lucide-react";
 import { DriveMode } from "@/types/drive";
+import { MobileTab } from "@/hooks/mobile/useMobileTabs";
 
 interface BottomTabBarProps {
-  activeTab: DriveMode;
-  onTabChange: (tab: DriveMode) => void;
+  activeTab: MobileTab;
+  onTabChange: (tab: MobileTab) => void;
 }
 
 export function BottomTabBar({ activeTab, onTabChange }: BottomTabBarProps) {
   const tabs = [
     { id: "personal" as DriveMode, label: "My Drive", icon: LayoutGrid },
     { id: "shared" as DriveMode, label: "Shared", icon: Share2 },
-    { id: "projects" as DriveMode, label: "Projects", icon: Folder },
+    { id: "projects" as MobileTab, label: "Projects", icon: Folder },
     { id: "archive" as DriveMode, label: "Archive", icon: Archive }
   ];
 

@@ -110,3 +110,128 @@
     background-position: -200% 0;
   }
 }
+
+/* Mobile operation feedback: make async file/folder cards feel alive in Capacitor/mobile layouts. */
+@media (max-width: 768px) {
+  @keyframes mobileItemOperationIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes mobileItemOperationPulse {
+    0%, 100% {
+      box-shadow: 0 0 0 rgba(99, 102, 241, 0);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgba(129, 140, 248, 0.16), 0 14px 32px rgba(99, 102, 241, 0.14);
+    }
+  }
+
+  @keyframes mobileItemDeleteOut {
+    from {
+      opacity: 0.72;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(8px) scale(0.96);
+      filter: blur(2px);
+    }
+  }
+
+  @keyframes mobileItemShimmer {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(120%);
+    }
+  }
+
+  .folder-card,
+  .file-card,
+  .file-row {
+    transition: transform 0.18s ease, opacity 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .folder-card.optimistic-item,
+  .file-card.optimistic-item,
+  .file-row.optimistic-item,
+  .folder-card.pending-move,
+  .file-card.pending-move,
+  .file-row.pending-move {
+    position: relative;
+    overflow: hidden;
+    opacity: 0.92 !important;
+    animation: mobileItemOperationIn 0.28s cubic-bezier(0.16, 1, 0.3, 1), mobileItemOperationPulse 1.35s ease-in-out infinite !important;
+  }
+
+  .folder-card.optimistic-item::after,
+  .file-card.optimistic-item::after,
+  .file-row.optimistic-item::after,
+  .folder-card.pending-move::after,
+  .file-card.pending-move::after,
+  .file-row.pending-move::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    animation: mobileItemShimmer 1.25s ease-in-out infinite;
+  }
+
+  .folder-card.pending-delete,
+  .file-card.pending-delete,
+  .file-row.pending-delete {
+    opacity: 0.7 !important;
+    background: rgba(239, 68, 68, 0.08) !important;
+    border-color: rgba(248, 113, 113, 0.32) !important;
+    animation: mobileItemDeleteOut 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+  }
+
+  .folder-card.optimistic-glow,
+  .file-card.optimistic-glow,
+  .file-row.optimistic-glow {
+    background: linear-gradient(
+      90deg,
+      rgba(99, 102, 241, 0.08) 0%,
+      rgba(59, 130, 246, 0.08) 50%,
+      rgba(99, 102, 241, 0.08) 100%
+    ) !important;
+    background-size: 200% 100% !important;
+  }
+
+  .folder-card.pending-move,
+  .file-card.pending-move,
+  .file-row.pending-move {
+    border-color: rgba(245, 158, 11, 0.32) !important;
+    background: rgba(245, 158, 11, 0.08) !important;
+  }
+}
+
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .folder-card.optimistic-item,
+  .file-card.optimistic-item,
+  .file-row.optimistic-item,
+  .folder-card.pending-delete,
+  .file-card.pending-delete,
+  .file-row.pending-delete,
+  .folder-card.pending-move,
+  .file-card.pending-move,
+  .file-row.pending-move,
+  .folder-card.optimistic-item::after,
+  .file-card.optimistic-item::after,
+  .file-row.optimistic-item::after,
+  .folder-card.pending-move::after,
+  .file-card.pending-move::after,
+  .file-row.pending-move::after {
+    animation: none !important;
+  }
+}

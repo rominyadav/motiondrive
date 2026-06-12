@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { DriveMode } from "@/types/drive";
 
+export type MobileTab = DriveMode | "projects";
+
 interface UseMobileTabsProps {
   explorerMode: DriveMode;
   selectProject: (id: string | null, name: string) => void;
@@ -16,14 +18,14 @@ export function useMobileTabs({
   selectArchiveDrive,
   setParams
 }: UseMobileTabsProps) {
-  const [activeTab, setActiveTab] = useState<DriveMode>(explorerMode);
+  const [activeTab, setActiveTab] = useState<MobileTab>(explorerMode);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
 
   useEffect(() => {
     setActiveTab(explorerMode);
   }, [explorerMode]);
 
-  const handleTabChange = (tab: DriveMode) => {
+  const handleTabChange = (tab: MobileTab) => {
     setActiveTab(tab);
     
     switch (tab) {

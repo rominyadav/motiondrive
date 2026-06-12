@@ -9,8 +9,7 @@ import {
   Trash2,
   Share2,
   X,
-  UserPlus,
-  Check
+  Loader2
 } from "lucide-react";
 import { Project, User } from "@/types/drive";
 
@@ -39,6 +38,11 @@ export function ProjectsTab({
   const [showShareModal, setShowShareModal] = useState(false);
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [showMenuForId, setShowMenuForId] = useState<string | null>(null);
+  const [pendingProjectAction, setPendingProjectAction] = useState<{
+    type: "create" | "update" | "delete";
+    projectId?: string;
+    name: string;
+  } | null>(null);
 
   // Filter projects by category
   const myProjects = projects.filter(p => {
@@ -80,19 +84,33 @@ export function ProjectsTab({
 
   const renderProjectCard = (project: Project) => {
     const isOwner = project.userId === currentUserId;
+    const pendingActionForProject = pendingProjectAction?.projectId === project.id ? pendingProjectAction.type : null;
+    const isProjectBusy = pendingActionForProject === "update" || pendingActionForProject === "delete";
     
     return (
-      <div key={project.id} className={`mobile-project-card ${showMenuForId === project.id ? "is-menu-open" : ""}`}>
+      <div
+        key={project.id}
+        className={`mobile-project-card ${showMenuForId === project.id ? "is-menu-open" : ""} ${isProjectBusy ? "mobile-project-card-busy" : ""} ${pendingActionForProject === "delete" ? "is-deleting" : ""}`}
+      >
         <button
           className="mobile-project-card-main"
+          disabled={isProjectBusy}
           onClick={() => onSelectProject(project.id, project.name)}
         >
           <div className="mobile-project-icon">
-            <Folder size={24} />
+            {isProjectBusy ? (
+              <Loader2 size={22} className="mobile-operation-spinner" />
+            ) : (
+              <Folder size={24} />
+            )}
           </div>
           <div className="mobile-project-info">
             <h4 className="mobile-project-name">{project.name}</h4>
-            {project.clientName && (
+            {isProjectBusy ? (
+              <p className="mobile-project-client">
+                {pendingActionForProject === "delete" ? "Deleting project..." : "Updating project..."}
+              </p>
+            ) : project.clientName && (
               <p className="mobile-project-client">{project.clientName}</p>
             )}
           </div>
@@ -105,6 +123,7 @@ export function ProjectsTab({
               className="mobile-project-menu-btn"
               aria-label={`Open actions for ${project.name}`}
               aria-expanded={showMenuForId === project.id}
+              disabled={isProjectBusy}
               onClick={(e) => {
                 e.stopPropagation();
                 setShowMenuForId(showMenuForId === project.id ? null : project.id);
@@ -132,6 +151,24 @@ export function ProjectsTab({
     );
   };
 
+  const renderPendingProjectCard = () => {
+    if (pendingProjectAction?.type !== "create") return null;
+
+    return (
+      <div className="mobile-project-card mobile-project-card-pending">
+        <div className="mobile-project-card-main">
+          <div className="mobile-project-icon">
+            <Loader2 size={22} className="mobile-operation-spinner" />
+          </div>
+          <div className="mobile-project-info">
+            <h4 className="mobile-project-name">{pendingProjectAction.name}</h4>
+            <p className="mobile-project-client">Creating project...</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderSection = (title: string, items: Project[], icon: any, emptyText: string) => {
     const Icon = icon;
     
@@ -145,13 +182,20 @@ export function ProjectsTab({
         
         {items.length > 0 ? (
           <div className="mobile-projects-grid">
+            {title === "My Projects" && renderPendingProjectCard()}
             {items.map(renderProjectCard)}
           </div>
         ) : (
-          <div className="mobile-projects-empty">
-            <Icon size={32} style={{ opacity: 0.3 }} />
-            <p>{emptyText}</p>
-          </div>
+          title === "My Projects" && pendingProjectAction?.type === "create" ? (
+            <div className="mobile-projects-grid">
+              {renderPendingProjectCard()}
+            </div>
+          ) : (
+            <div className="mobile-projects-empty">
+              <Icon size={32} style={{ opacity: 0.3 }} />
+              <p>{emptyText}</p>
+            </div>
+          )
         )}
       </div>
     );
@@ -185,14 +229,23 @@ export function ProjectsTab({
             setActiveProject(null);
           }}
           onSubmit={async (name, clientName, sharedWith) => {
-            if (showEditModal && activeProject) {
-              await onEditProject(activeProject.id, name, clientName, sharedWith);
-            } else {
-              await onCreateProject(name, clientName, sharedWith);
+            setPendingProjectAction({
+              type: showEditModal ? "update" : "create",
+              projectId: activeProject?.id,
+              name
+            });
+            try {
+              if (showEditModal && activeProject) {
+                await onEditProject(activeProject.id, name, clientName, sharedWith);
+              } else {
+                await onCreateProject(name, clientName, sharedWith);
+              }
+              setShowCreateModal(false);
+              setShowEditModal(false);
+              setActiveProject(null);
+            } finally {
+              setPendingProjectAction(null);
             }
-            setShowCreateModal(false);
-            setShowEditModal(false);
-            setActiveProject(null);
           }}
         />
       )}
@@ -208,14 +261,23 @@ export function ProjectsTab({
             setActiveProject(null);
           }}
           onSave={async (sharedWith) => {
-            await onEditProject(
-              activeProject.id,
-              activeProject.name,
-              activeProject.clientName || "",
-              sharedWith
-            );
-            setShowShareModal(false);
-            setActiveProject(null);
+            setPendingProjectAction({
+              type: "update",
+              projectId: activeProject.id,
+              name: activeProject.name
+            });
+            try {
+              await onEditProject(
+                activeProject.id,
+                activeProject.name,
+                activeProject.clientName || "",
+                sharedWith
+              );
+              setShowShareModal(false);
+              setActiveProject(null);
+            } finally {
+              setPendingProjectAction(null);
+            }
           }}
         />
       )}
@@ -229,9 +291,18 @@ export function ProjectsTab({
             setActiveProject(null);
           }}
           onConfirm={async () => {
-            await onDeleteProject(activeProject.id);
-            setShowDeleteConfirm(false);
-            setActiveProject(null);
+            setPendingProjectAction({
+              type: "delete",
+              projectId: activeProject.id,
+              name: activeProject.name
+            });
+            try {
+              await onDeleteProject(activeProject.id);
+              setShowDeleteConfirm(false);
+              setActiveProject(null);
+            } finally {
+              setPendingProjectAction(null);
+            }
           }}
         />
       )}
@@ -360,7 +431,10 @@ function ProjectFormModal({
                         <span className="mobile-share-user-avatar" aria-hidden="true">
                           {displayName.charAt(0).toUpperCase()}
                         </span>
-                        <span className="mobile-user-name">{displayName}</span>
+                        <span className="mobile-user-identity">
+                          <span className="mobile-user-name">{displayName}</span>
+                          <span className="mobile-user-email">{user.email}</span>
+                        </span>
                       </label>
                     );
                   })
@@ -376,6 +450,7 @@ function ProjectFormModal({
               Cancel
             </button>
             <button type="submit" disabled={loading} className="mobile-btn-primary">
+              {loading && <Loader2 size={16} className="mobile-operation-spinner" />}
               {loading ? "Saving..." : isEdit ? "Save Changes" : "Create"}
             </button>
           </div>
@@ -488,7 +563,10 @@ function ShareProjectModal({
                         <span className="mobile-share-user-avatar" aria-hidden="true">
                           {displayName.charAt(0).toUpperCase()}
                         </span>
-                        <span className="mobile-user-name">{displayName}</span>
+                        <span className="mobile-user-identity">
+                          <span className="mobile-user-name">{displayName}</span>
+                          <span className="mobile-user-email">{user.email}</span>
+                        </span>
                       </label>
                     );
                   })
@@ -504,6 +582,7 @@ function ShareProjectModal({
               Cancel
             </button>
             <button onClick={handleSave} disabled={loading} className="mobile-btn-primary">
+              {loading && <Loader2 size={16} className="mobile-operation-spinner" />}
               {loading ? "Saving..." : "Save"}
             </button>
           </div>
@@ -560,6 +639,7 @@ function DeleteConfirmModal({
               Cancel
             </button>
             <button onClick={handleConfirm} disabled={loading} className="mobile-btn-danger">
+              {loading && <Loader2 size={16} className="mobile-operation-spinner" />}
               {loading ? "Deleting..." : "Delete Project"}
             </button>
           </div>

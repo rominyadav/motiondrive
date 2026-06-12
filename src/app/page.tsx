@@ -42,7 +42,7 @@ import { TransferDrawer } from "@/components/drive/TransferDrawer";
 // Mobile components
 import { BottomTabBar, MobileHeader, FloatingActionButton, ProjectPickerModal, MobileSidebar, ProjectsTab } from "@/components/mobile";
 import "@/components/mobile/ProjectsTab.css";
-import { useMobileTabs } from "@/hooks/mobile/useMobileTabs";
+import { MobileTab, useMobileTabs } from "@/hooks/mobile/useMobileTabs";
 import { useCapacitorClass } from "@/hooks/mobile/useCapacitorClass";
 import { isCapacitorApp } from "@/lib/platform";
 
@@ -427,6 +427,13 @@ function DrivePageContent() {
       setShowProjectPicker(false);
     }
   }, [showProjectPicker, setShowProjectPicker]);
+
+  const handleMobileTabChange = (tab: MobileTab) => {
+    if (tab !== "projects") {
+      setShowMobileProjectsTab(false);
+    }
+    handleTabChange(tab);
+  };
 
   // Project Section Collapsible & Show More States
   const [yourProjsExpanded, setYourProjsExpanded] = useState(true);
@@ -1177,7 +1184,7 @@ function DrivePageContent() {
 
           <BottomTabBar 
             activeTab={activeTab} 
-            onTabChange={handleTabChange} 
+            onTabChange={handleMobileTabChange} 
           />
         </>
       )}
