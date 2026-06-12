@@ -1214,7 +1214,7 @@ function DrivePageContent() {
 export default function DrivePage() {
   return (
     <Suspense fallback={
-      <div style={{ display: "flex", height: "100vh", width: "100vw", alignItems: "center", justifyContent: "center", background: "var(--bg-main)", color: "var(--text-main)" }}>
+      <div style={{ display: "flex", minHeight: "100dvh", width: "100%", alignItems: "center", justifyContent: "center", background: "var(--bg-main)", color: "var(--text-main)" }}>
         <Loader2 size={32} style={{ animation: "spin 1s linear infinite", color: "var(--accent-primary)" }} />
       </div>
     }>
