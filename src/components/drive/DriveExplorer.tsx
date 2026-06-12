@@ -130,6 +130,7 @@ interface DriveExplorerProps {
   isDeletingProject?: boolean;
   selectedProjectToEdit?: any;
   selectedProjectToDelete?: any;
+  hideChrome?: boolean;
 }
 
 function formatBytes(bytes: number, decimals = 2) {
@@ -219,6 +220,7 @@ export function DriveExplorer({
   isDeletingProject = false,
   selectedProjectToEdit = null,
   selectedProjectToDelete = null,
+  hideChrome = false,
 }: DriveExplorerProps) {
 
   const currentUserId = session?.user?.id;
@@ -285,281 +287,285 @@ export function DriveExplorer({
 
   return (
     <div className="explorer animate-fade-in">
-      {/* Breadcrumb Path */}
-      <div className="breadcrumbs">
-        {explorerMode === "shared" ? (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span 
-                className={`breadcrumb-item ${sharedFolderPath.length === 0 ? "active" : ""}`}
-                onClick={() => handleBreadcrumbClickShared([])}
-              >
-                Shared Drive
-              </span>
-            </div>
-            {sharedFolderPath.map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <ChevronRight size={16} style={{ opacity: 0.5 }} />
-                <span 
-                  className={`breadcrumb-item ${i === sharedFolderPath.length - 1 ? "active" : ""}`}
-                  onClick={() => handleBreadcrumbClickShared(sharedFolderPath.slice(0, i + 1))}
-                >
-                  {item}
-                </span>
-              </div>
-            ))}
-          </>
-        ) : explorerMode === "archive" ? (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <span 
-                className={`breadcrumb-item ${archiveFolderPath.length === 0 ? "active" : ""}`}
-                onClick={() => handleBreadcrumbClickArchive([])}
-              >
-                Archive Drive
-              </span>
-            </div>
-            {archiveFolderPath.map((item, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <ChevronRight size={16} style={{ opacity: 0.5 }} />
-                <span 
-                  className={`breadcrumb-item ${i === archiveFolderPath.length - 1 ? "active" : ""}`}
-                  onClick={() => handleBreadcrumbClickArchive(archiveFolderPath.slice(0, i + 1))}
-                >
-                  {item}
-                </span>
-              </div>
-            ))}
-          </>
-        ) : (
-          folderPath.map((item, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {i > 0 && <ChevronRight size={16} style={{ opacity: 0.5 }} />}
-              <span 
-                className={`breadcrumb-item ${i === folderPath.length - 1 ? "active" : ""}`}
-                onClick={() => handleBreadcrumbClick(i)}
-              >
-                {item.name}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="explorer-header">
-        <h2 className="explorer-title" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span>
-            {explorerMode === "shared" 
-              ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
-              : explorerMode === "archive"
-              ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
-              : (folderPath[folderPath.length - 1]?.name || "My Drive")
-            }
-          </span>
-          {((isRenamingProject && selectedProjectToEdit?.id === selectedProjectId) || 
-            (isDeletingProject && selectedProjectToDelete?.id === selectedProjectId)) && (
-            <Loader2 className="animate-spin brand-accent animate-pulse-light" size={18} />
-          )}
-        </h2>
-
-          {(() => {
-            const currentOpenProject = explorerMode === "personal" && selectedProjectId 
-              ? projects.find((p: any) => p.id === selectedProjectId)
-              : null;
-            
-            if (!currentOpenProject) return null;
-
-            return (
-              <div ref={projectHeaderRef as any} style={{ position: "relative", display: "inline-flex" }}>
-                <button
-                  onClick={() => setProjectHeaderMenuOpen(!projectHeaderMenuOpen)}
-                  className="btn-icon"
-                  style={{
-                    padding: "6px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: "8px",
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    cursor: "pointer",
-                    color: "rgba(255, 255, 255, 0.8)",
-                    transition: "all 0.2s"
-                  }}
-                  title="Project Actions"
-                >
-                  <MoreVertical size={16} />
-                </button>
-
-                {projectHeaderMenuOpen && (
-                  <div 
-                    className="new-dropdown-menu animate-scale-up" 
-                    style={{ 
-                      right: "auto", 
-                      left: 0, 
-                      top: "100%", 
-                      marginTop: "8px", 
-                      zIndex: 100,
-                      minWidth: "200px"
-                    }}
+      {!hideChrome && (
+        <>
+          {/* Breadcrumb Path */}
+          <div className="breadcrumbs">
+            {explorerMode === "shared" ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span 
+                    className={`breadcrumb-item ${sharedFolderPath.length === 0 ? "active" : ""}`}
+                    onClick={() => handleBreadcrumbClickShared([])}
                   >
-                    <button 
-                      onClick={() => {
-                        setSelectedProjectToEdit(currentOpenProject);
-                        setEditProjectName(currentOpenProject.name);
-                        setEditProjectClient(currentOpenProject.clientName || "");
-                        
-                        const shareAll = currentOpenProject.sharedWith === "all" || !currentOpenProject.sharedWith;
-                        setEditShareWithAll(shareAll);
-                        setEditSelectedUserIds(!shareAll && currentOpenProject.sharedWith ? currentOpenProject.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
-                        
-                        setRenameProjectModalOpen(true);
-                        setProjectHeaderMenuOpen(false);
-                      }}
-                      className="dropdown-item"
+                    Shared Drive
+                  </span>
+                </div>
+                {sharedFolderPath.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <ChevronRight size={16} style={{ opacity: 0.5 }} />
+                    <span 
+                      className={`breadcrumb-item ${i === sharedFolderPath.length - 1 ? "active" : ""}`}
+                      onClick={() => handleBreadcrumbClickShared(sharedFolderPath.slice(0, i + 1))}
+                    >
+                      {item}
+                    </span>
+                  </div>
+                ))}
+              </>
+            ) : explorerMode === "archive" ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span 
+                    className={`breadcrumb-item ${archiveFolderPath.length === 0 ? "active" : ""}`}
+                    onClick={() => handleBreadcrumbClickArchive([])}
+                  >
+                    Archive Drive
+                  </span>
+                </div>
+                {archiveFolderPath.map((item, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <ChevronRight size={16} style={{ opacity: 0.5 }} />
+                    <span 
+                      className={`breadcrumb-item ${i === archiveFolderPath.length - 1 ? "active" : ""}`}
+                      onClick={() => handleBreadcrumbClickArchive(archiveFolderPath.slice(0, i + 1))}
+                    >
+                      {item}
+                    </span>
+                  </div>
+                ))}
+              </>
+            ) : (
+              folderPath.map((item, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {i > 0 && <ChevronRight size={16} style={{ opacity: 0.5 }} />}
+                  <span 
+                    className={`breadcrumb-item ${i === folderPath.length - 1 ? "active" : ""}`}
+                    onClick={() => handleBreadcrumbClick(i)}
+                  >
+                    {item.name}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="explorer-header">
+            <h2 className="explorer-title" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span>
+                {explorerMode === "shared" 
+                  ? (sharedFolderPath[sharedFolderPath.length - 1] || "Shared Drive")
+                  : explorerMode === "archive"
+                  ? (archiveFolderPath[archiveFolderPath.length - 1] || "Archive Drive")
+                  : (folderPath[folderPath.length - 1]?.name || "My Drive")
+                }
+              </span>
+              {((isRenamingProject && selectedProjectToEdit?.id === selectedProjectId) || 
+                (isDeletingProject && selectedProjectToDelete?.id === selectedProjectId)) && (
+                <Loader2 className="animate-spin brand-accent animate-pulse-light" size={18} />
+              )}
+            </h2>
+
+              {(() => {
+                const currentOpenProject = explorerMode === "personal" && selectedProjectId 
+                  ? projects.find((p: any) => p.id === selectedProjectId)
+                  : null;
+                
+                if (!currentOpenProject) return null;
+
+                return (
+                  <div ref={projectHeaderRef as any} style={{ position: "relative", display: "inline-flex" }}>
+                    <button
+                      onClick={() => setProjectHeaderMenuOpen(!projectHeaderMenuOpen)}
+                      className="btn-icon"
                       style={{
+                        padding: "6px",
                         display: "flex",
                         alignItems: "center",
-                        gap: "8px",
-                        width: "100%",
-                        padding: "10px 14px",
-                        background: "none",
-                        border: "none",
-                        color: "var(--text-primary)",
-                        textAlign: "left",
+                        justifyContent: "center",
+                        borderRadius: "8px",
+                        background: "rgba(255, 255, 255, 0.05)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
                         cursor: "pointer",
-                        fontSize: "13px",
-                        borderRadius: "4px",
-                        transition: "background 0.2s"
+                        color: "rgba(255, 255, 255, 0.8)",
+                        transition: "all 0.2s"
                       }}
+                      title="Project Actions"
                     >
-                      <Edit2 size={14} />
-                      <span>Rename / Edit Project</span>
+                      <MoreVertical size={16} />
                     </button>
-                    
-                    {(isAdmin || currentOpenProject?.userId === session?.user?.id) && (
-                      <button 
-                        onClick={() => {
-                          setSelectedProjectToDelete(currentOpenProject);
-                          setDeleteProjectModalOpen(true);
-                          setProjectHeaderMenuOpen(false);
-                        }}
-                        className="dropdown-item"
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "8px",
-                          width: "100%",
-                          padding: "10px 14px",
-                          background: "none",
-                          border: "none",
-                          color: "#ff4d4d",
-                          textAlign: "left",
-                          cursor: "pointer",
-                          fontSize: "13px",
-                          borderRadius: "4px",
-                          transition: "background 0.2s"
+
+                    {projectHeaderMenuOpen && (
+                      <div 
+                        className="new-dropdown-menu animate-scale-up" 
+                        style={{ 
+                          right: "auto", 
+                          left: 0, 
+                          top: "100%", 
+                          marginTop: "8px", 
+                          zIndex: 100,
+                          minWidth: "200px"
                         }}
                       >
-                        <Trash2 size={14} style={{ color: "#ff4d4d" }} />
-                        <span>Delete Project</span>
-                      </button>
+                        <button 
+                          onClick={() => {
+                            setSelectedProjectToEdit(currentOpenProject);
+                            setEditProjectName(currentOpenProject.name);
+                            setEditProjectClient(currentOpenProject.clientName || "");
+                            
+                            const shareAll = currentOpenProject.sharedWith === "all" || !currentOpenProject.sharedWith;
+                            setEditShareWithAll(shareAll);
+                            setEditSelectedUserIds(!shareAll && currentOpenProject.sharedWith ? currentOpenProject.sharedWith.split(",").map((s: string) => s.trim()).filter(Boolean) : []);
+                            
+                            setRenameProjectModalOpen(true);
+                            setProjectHeaderMenuOpen(false);
+                          }}
+                          className="dropdown-item"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            padding: "10px 14px",
+                            background: "none",
+                            border: "none",
+                            color: "var(--text-primary)",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            borderRadius: "4px",
+                            transition: "background 0.2s"
+                          }}
+                        >
+                          <Edit2 size={14} />
+                          <span>Rename / Edit Project</span>
+                        </button>
+                        
+                        {(isAdmin || currentOpenProject?.userId === session?.user?.id) && (
+                          <button 
+                            onClick={() => {
+                              setSelectedProjectToDelete(currentOpenProject);
+                              setDeleteProjectModalOpen(true);
+                              setProjectHeaderMenuOpen(false);
+                            }}
+                            className="dropdown-item"
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              width: "100%",
+                              padding: "10px 14px",
+                              background: "none",
+                              border: "none",
+                              color: "#ff4d4d",
+                              textAlign: "left",
+                              cursor: "pointer",
+                              fontSize: "13px",
+                              borderRadius: "4px",
+                              transition: "background 0.2s"
+                            }}
+                          >
+                            <Trash2 size={14} style={{ color: "#ff4d4d" }} />
+                            <span>Delete Project</span>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })()}
-        
-        
-        <div className="explorer-actions" ref={newDropdownRef as any}>
-          {explorerMode !== "archive" && explorerMode !== "links" && (
-            <div style={{ position: "relative" }}>
-              <button 
-                onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
-                className="btn-primary"
-                style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px" }}
-              >
-                <Plus size={18} />
-                <span>New</span>
-                <ChevronDown size={14} style={{ opacity: 0.8 }} />
-              </button>
-
-              {newDropdownOpen && (
-                <div className="new-dropdown-menu animate-scale-up">
+                );
+              })()}
+            
+            
+            <div className="explorer-actions" ref={newDropdownRef as any}>
+              {explorerMode !== "archive" && explorerMode !== "links" && (
+                <div style={{ position: "relative" }}>
                   <button 
-                    onClick={() => {
-                      setFolderModalOpen(true);
-                      setNewDropdownOpen(false);
-                    }} 
-                    className="dropdown-item"
+                    onClick={() => setNewDropdownOpen(!newDropdownOpen)} 
+                    className="btn-primary"
+                    style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 18px" }}
                   >
-                    <FolderPlus size={16} />
-                    <span>New Folder</span>
-                  </button>
-                  
-                  <button 
-                    onClick={() => {
-                      handleOpenTextCreator();
-                      setNewDropdownOpen(false);
-                    }} 
-                    className="dropdown-item"
-                  >
-                    <FileText size={16} />
-                    <span>Create Text File</span>
+                    <Plus size={18} />
+                    <span>New</span>
+                    <ChevronDown size={14} style={{ opacity: 0.8 }} />
                   </button>
 
-                  <button 
-                    onClick={() => {
-                      handleOpenDocsCreator();
-                      setNewDropdownOpen(false);
-                    }} 
-                    className="dropdown-item"
-                  >
-                    <FileText size={16} style={{ color: "var(--accent-indigo)" }} />
-                    <span>Docs (Rich Document)</span>
-                  </button>
+                  {newDropdownOpen && (
+                    <div className="new-dropdown-menu animate-scale-up">
+                      <button 
+                        onClick={() => {
+                          setFolderModalOpen(true);
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FolderPlus size={16} />
+                        <span>New Folder</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => {
+                          handleOpenTextCreator();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FileText size={16} />
+                        <span>Create Text File</span>
+                      </button>
 
-                  <button 
-                    onClick={() => {
-                      handleOpenSheetCreator();
-                      setNewDropdownOpen(false);
-                    }} 
-                    className="dropdown-item"
-                  >
-                    <Table size={16} style={{ color: "var(--accent-success, #10b981)" }} />
-                    <span>Blank Sheet</span>
-                  </button>
+                      <button 
+                        onClick={() => {
+                          handleOpenDocsCreator();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FileText size={16} style={{ color: "var(--accent-indigo)" }} />
+                        <span>Docs (Rich Document)</span>
+                      </button>
 
-                  <hr className="dropdown-divider" />
+                      <button 
+                        onClick={() => {
+                          handleOpenSheetCreator();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <Table size={16} style={{ color: "var(--accent-success, #10b981)" }} />
+                        <span>Blank Sheet</span>
+                      </button>
 
-                  <button 
-                    onClick={() => {
-                      triggerFileSelect();
-                      setNewDropdownOpen(false);
-                    }} 
-                    className="dropdown-item"
-                  >
-                    <Upload size={16} />
-                    <span>Upload File</span>
-                  </button>
+                      <hr className="dropdown-divider" />
 
-                  <button 
-                    onClick={() => {
-                      triggerFolderSelect();
-                      setNewDropdownOpen(false);
-                    }} 
-                    className="dropdown-item"
-                  >
-                    <FolderUp size={16} />
-                    <span>Upload Folder</span>
-                  </button>
+                      <button 
+                        onClick={() => {
+                          triggerFileSelect();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <Upload size={16} />
+                        <span>Upload File</span>
+                      </button>
+
+                      <button 
+                        onClick={() => {
+                          triggerFolderSelect();
+                          setNewDropdownOpen(false);
+                        }} 
+                        className="dropdown-item"
+                      >
+                        <FolderUp size={16} />
+                        <span>Upload Folder</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
 
       {/* VIEW RENDER: TABLE OR ICONS */}
       {explorerMode !== "links" && contentsLoading ? (
@@ -602,8 +608,8 @@ export function DriveExplorer({
               <p style={{ fontSize: "12px", opacity: 0.8, marginTop: "4px" }}>Generate share links by copying any file link in your drives.</p>
             </div>
           ) : (
-            <div className="files-container">
-              <div className="table-header" style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr" }}>
+            <div className="files-container shared-links-list">
+              <div className="table-header shared-links-table-header" style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr" }}>
                 <div>File Name</div>
                 <div>Created At</div>
                 <div>Expires At</div>
@@ -615,50 +621,50 @@ export function DriveExplorer({
                 const isRevoked = link.isRevoked;
                 const isActive = !isExpired && !isRevoked;
 
-                let statusBadge = (
-                  <span className="badge success" style={{ color: "#10b981", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                    Active
-                  </span>
-                );
+                let statusLabel = "Active";
+                let statusClassName = "shared-link-status shared-link-status-active badge success";
                 if (isRevoked) {
-                  statusBadge = (
-                    <span className="badge danger" style={{ color: "var(--accent-destructive)", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                      Revoked
-                    </span>
-                  );
+                  statusLabel = "Revoked";
+                  statusClassName = "shared-link-status shared-link-status-revoked badge danger";
                 } else if (isExpired) {
-                  statusBadge = (
-                    <span className="badge warning" style={{ color: "#f59e0b", fontSize: "11px", fontWeight: "700", display: "inline-block", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                      Expired
-                    </span>
-                  );
+                  statusLabel = "Expired";
+                  statusClassName = "shared-link-status shared-link-status-expired badge warning";
                 }
 
                 return (
                   <div 
                     key={link.id} 
-                    className="file-row" 
+                    className="file-row shared-link-card" 
                     style={{ gridTemplateColumns: "2.5fr 1.2fr 1.2fr 1fr", cursor: "default" }}
                   >
-                    <div className="file-info" style={{ minWidth: 0 }}>
-                      <LinkIcon size={16} style={{ color: "var(--brand-accent)", opacity: isActive ? 1 : 0.5, flexShrink: 0 }} />
-                      <span className="file-name" title={link.filename} style={{ textDecoration: isActive ? "none" : "line-through", opacity: isActive ? 1 : 0.6 }}>
-                        {link.filename}
-                      </span>
+                    <div className="file-info shared-link-main" style={{ minWidth: 0 }}>
+                      <div className="shared-link-title">
+                        <LinkIcon size={16} style={{ color: "var(--brand-accent)", opacity: isActive ? 1 : 0.5, flexShrink: 0 }} />
+                        <span className="file-name shared-link-name" title={link.filename} style={{ textDecoration: isActive ? "none" : "line-through", opacity: isActive ? 1 : 0.6 }}>
+                          {link.filename}
+                        </span>
+                      </div>
+                      <div className="shared-link-mobile-status">
+                        <span className={statusClassName}>{statusLabel}</span>
+                      </div>
                     </div>
 
-                    <div className="file-size" style={{ opacity: 0.8, fontSize: "13px" }}>
-                      {new Date(link.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    <div className="file-size shared-link-date shared-link-created" style={{ opacity: 0.8, fontSize: "13px" }}>
+                      <span className="shared-link-date-label">Created</span>
+                      <span>{new Date(link.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                     </div>
 
-                    <div className="file-date" style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                    <div className="file-date shared-link-date shared-link-expires" style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+                      <span className="shared-link-date-label">Expires</span>
                       <span style={{ opacity: isActive ? 0.9 : 0.6, fontSize: "13px" }}>
                         {new Date(link.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
-                      {statusBadge}
+                      <span className="shared-link-desktop-status">
+                        <span className={statusClassName}>{statusLabel}</span>
+                      </span>
                     </div>
 
-                    <div className="file-actions" style={{ gap: "8px", justifyContent: "flex-end" }}>
+                    <div className="file-actions shared-link-actions" style={{ gap: "8px", justifyContent: "flex-end" }}>
                       <button
                         onClick={async () => {
                           const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
