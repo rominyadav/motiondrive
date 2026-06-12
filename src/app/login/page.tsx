@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { getGoogleSignInErrorMessage, signInWithGoogle } from "@/lib/google-sign-in";
+import { getGoogleSignInErrorMessage, isGoogleSignInCancelled, signInWithGoogle } from "@/lib/google-sign-in";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
@@ -52,6 +52,10 @@ export default function LoginPage() {
         router.refresh();
       }
     } catch (err) {
+      if (isGoogleSignInCancelled(err)) {
+        return;
+      }
+
       console.error("Failed to sign in with Google:", err);
       setError(getGoogleSignInErrorMessage(err));
     } finally {

@@ -45,6 +45,7 @@ import "@/components/mobile/ProjectsTab.css";
 import { MobileTab, useMobileTabs } from "@/hooks/mobile/useMobileTabs";
 import { useCapacitorClass } from "@/hooks/mobile/useCapacitorClass";
 import { isCapacitorApp } from "@/lib/platform";
+import { signOutFromNativeGoogle } from "@/lib/google-sign-in";
 
 // Modular modal components
 import { ConfirmModal } from "@/components/drive/modals/ConfirmModal";
@@ -467,7 +468,26 @@ function DrivePageContent() {
   }, [router]);
 
   const handleSignOut = async () => {
+    setSidebarOpen(false);
+
+    if (isCapacitorApp()) {
+      try {
+        await signOutFromNativeGoogle();
+      } catch (err) {
+        console.warn("Native Google sign-out failed:", err);
+      }
+
+      try {
+        const { Preferences } = await import("@capacitor/preferences");
+        await Preferences.remove({ key: "cached_session" });
+      } catch (err) {
+        console.warn("Failed to clear cached mobile session:", err);
+      }
+    }
+
     await authClient.signOut();
+    queryClient.clear();
+    setSession(null);
     router.push("/login");
     router.refresh();
   };

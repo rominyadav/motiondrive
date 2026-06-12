@@ -10,10 +10,14 @@ type NativeGoogleAuthResult = {
   givenName?: string;
   familyName?: string;
   profilePictureUri?: string;
+  packageName?: string;
+  buildType?: string;
+  serverClientId?: string;
 };
 
 type NativeGoogleAuthPlugin = {
   signIn(options: { serverClientId: string }): Promise<NativeGoogleAuthResult>;
+  signOut(): Promise<void>;
   cancel(): Promise<void>;
 };
 
@@ -45,7 +49,21 @@ export function getGoogleSignInErrorMessage(error: unknown) {
   }
 
   const err = error as { message?: string };
-  return err?.message || "Failed to sign in with Google.";
+  const message = err?.message || "Failed to sign in with Google.";
+
+  if (
+    message.includes("DEVELOPER_ERROR") ||
+    message.includes("12500") ||
+    message.includes("package name") ||
+    message.includes("fingerprint")
+  ) {
+    return (
+      "Google sign-in is not configured for this Android build. Check that Google Cloud Console has an Android OAuth " +
+      "client for package com.motionsewa.drive with this build's SHA-1 and SHA-256 fingerprints."
+    );
+  }
+
+  return message;
 }
 
 export async function signInWithGoogle(options: GoogleSignInOptions = {}): Promise<GoogleSignInResult> {
@@ -63,7 +81,8 @@ export async function signInWithGoogle(options: GoogleSignInOptions = {}): Promi
 }
 
 async function signInWithNativeGoogle(options: GoogleSignInOptions): Promise<GoogleSignInResult> {
-  const serverClientId = await getNativeGoogleServerClientId();
+  const nativeConfig = await getNativeGoogleConfig();
+  const serverClientId = nativeConfig.serverClientId;
 
   if (!serverClientId) {
     throw new Error(
@@ -76,6 +95,16 @@ async function signInWithNativeGoogle(options: GoogleSignInOptions): Promise<Goo
     nativeGoogleAuthPlugin ?? (nativeGoogleAuthPlugin = registerPlugin<NativeGoogleAuthPlugin>("NativeGoogleAuth"));
 
   const nativeResult = await NativeGoogleAuth.signIn({ serverClientId });
+
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[GoogleSignIn] Native Android config", {
+      expectedPackageName: nativeConfig.androidPackageName,
+      packageName: nativeResult.packageName,
+      buildType: nativeResult.buildType,
+      serverClientId: nativeResult.serverClientId || serverClientId,
+      androidClientId: nativeConfig.androidClientId,
+    });
+  }
 
   if (!nativeResult.idToken) {
     throw new Error("Google did not return an ID token.");
@@ -98,22 +127,38 @@ async function signInWithNativeGoogle(options: GoogleSignInOptions): Promise<Goo
   return { completedInApp: true };
 }
 
-async function getNativeGoogleServerClientId() {
-  if (process.env.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID) {
-    return process.env.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+export async function signOutFromNativeGoogle() {
+  if (!isCapacitorApp()) {
+    return;
   }
 
+  const { registerPlugin } = await import("@capacitor/core");
+  const NativeGoogleAuth =
+    nativeGoogleAuthPlugin ?? (nativeGoogleAuthPlugin = registerPlugin<NativeGoogleAuthPlugin>("NativeGoogleAuth"));
+
+  await NativeGoogleAuth.signOut();
+}
+
+async function getNativeGoogleConfig() {
   const response = await fetch(`${getAppBaseURL()}/api/auth/google/native-config`, {
     credentials: "include",
     cache: "no-store",
   });
 
   if (!response.ok) {
-    return "";
+    return { serverClientId: "", androidClientId: "", androidPackageName: "com.motionsewa.drive" };
   }
 
-  const data = (await response.json()) as { serverClientId?: string };
-  return data.serverClientId || "";
+  const data = (await response.json()) as {
+    serverClientId?: string;
+    androidClientId?: string;
+    androidPackageName?: string;
+  };
+  return {
+    serverClientId: data.serverClientId || "",
+    androidClientId: data.androidClientId || "",
+    androidPackageName: data.androidPackageName || "com.motionsewa.drive",
+  };
 }
 
 function getAppBaseURL() {
