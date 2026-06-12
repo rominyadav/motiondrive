@@ -1,0 +1,63 @@
+/* ==========================================
+   CAPACITOR MOBILE APP ONLY STYLES
+   Only active when body has .capacitor-app class
+   ========================================== */
+
+/* Show mobile UI ONLY in Capacitor app */
+body.capacitor-app .bottom-tab-bar {
+  display: flex !important;
+}
+
+body.capacitor-app .fab-container {
+  display: block !important;
+}
+
+body.capacitor-app .mobile-header {
+  display: flex !important;
+}
+
+/* Hide desktop header in Capacitor app */
+body.capacitor-app .header {
+  display: none !important;
+}
+
+body.capacitor-app .mobile-top-header {
+  display: none !important;
+}
+
+/* Adjust main content for bottom tabs in Capacitor app */
+body.capacitor-app .main-content {
+  padding-bottom: 72px;
+}
+
+body.capacitor-app .explorer {
+  padding: 16px;
+}
+
+/* Adjust transfer drawer position in Capacitor app */
+body.capacitor-app .progress-drawer,
+body.capacitor-app .upload-minimized-pill {
+  bottom: 88px;
+}
+
+/* Adjust bulk action bar in Capacitor app */
+body.capacitor-app .floating-bulk-bar {
+  bottom: 88px;
+}
+
+/* Sidebar becomes overlay in Capacitor app */
+body.capacitor-app .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  z-index: 100;
+  transform: translateX(-100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 20px 0 30px rgba(0, 0, 0, 0.5);
+}
+
+body.capacitor-app .sidebar.sidebar-open {
+  transform: translateX(0);
+}

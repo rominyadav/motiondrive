@@ -28,12 +28,19 @@ import {
 } from "lucide-react";
 import "./drive.css";
 import "./operations-animations.css";
+import "./capacitor-mobile.css";
 
 // Modular drive components
 import { Sidebar } from "@/components/drive/Sidebar";
 import { Navbar } from "@/components/drive/Navbar";
 import { DriveExplorer } from "@/components/drive/DriveExplorer";
 import { TransferDrawer } from "@/components/drive/TransferDrawer";
+
+// Mobile components
+import { BottomTabBar, MobileHeader, FloatingActionButton, ProjectPickerModal, MobileSidebar } from "@/components/mobile";
+import { useMobileTabs } from "@/hooks/mobile/useMobileTabs";
+import { useCapacitorClass } from "@/hooks/mobile/useCapacitorClass";
+import { isCapacitorApp } from "@/lib/platform";
 
 // Modular modal components
 import { ConfirmModal } from "@/components/drive/modals/ConfirmModal";
@@ -384,6 +391,30 @@ function DrivePageContent() {
   // Mobile Sidebar & Collapsibility State
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Add capacitor-app class to body when running in Capacitor
+  useCapacitorClass();
+
+  // Detect if running in Capacitor mobile app
+  const [isMobileApp, setIsMobileApp] = useState(false);
+
+  useEffect(() => {
+    setIsMobileApp(isCapacitorApp());
+  }, []);
+
+  // Mobile tabs navigation hook (only for Capacitor app)
+  const {
+    activeTab,
+    showProjectPicker,
+    setShowProjectPicker,
+    handleTabChange
+  } = useMobileTabs({
+    explorerMode,
+    selectProject,
+    selectSharedDrive,
+    selectArchiveDrive,
+    setParams
+  });
+
   // Project Section Collapsible & Show More States
   const [yourProjsExpanded, setYourProjsExpanded] = useState(true);
   const [sharedProjsExpanded, setSharedProjsExpanded] = useState(false);
@@ -596,6 +627,20 @@ function DrivePageContent() {
   }
 
   const isAdmin = session?.user?.role === "admin" || session?.user?.role === "manager";
+
+  const getMobileTitle = () => {
+    if (explorerMode === "personal") {
+      if (selectedProjectId && projects.length > 0) {
+        const project = projects.find(p => p.id === selectedProjectId);
+        return project?.name || "My Drive";
+      }
+      return "My Drive";
+    }
+    if (explorerMode === "shared") return "Shared Drive";
+    if (explorerMode === "archive") return "Archive";
+    if (explorerMode === "links") return "Shared Links";
+    return "Drive";
+  };
 
   return (
     <div className="app-container">
@@ -1029,6 +1074,54 @@ function DrivePageContent() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* MOBILE UI COMPONENTS - ONLY FOR CAPACITOR APP */}
+      {isMobileApp && (
+        <>
+          <MobileHeader 
+            onMenuOpen={() => setSidebarOpen(true)}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            title={getMobileTitle()}
+            userInitial={session?.user?.name?.charAt(0) || "U"}
+          />
+
+          <MobileSidebar
+            session={session}
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            explorerMode={explorerMode}
+            isAdmin={isAdmin}
+            storageStats={storageStats}
+            setShowDetailedUsageModal={setShowDetailedUsageModal}
+            handleSignOut={handleSignOut}
+            setParams={setParams}
+          />
+
+          <BottomTabBar 
+            activeTab={activeTab} 
+            onTabChange={handleTabChange} 
+          />
+
+          <FloatingActionButton
+            onUploadFile={triggerFileSelect}
+            onUploadFolder={triggerFolderSelect}
+            onCreateFolder={() => setFolderModalOpen(true)}
+            onCreateTextFile={handleOpenTextCreator}
+            onCreateDocsFile={handleOpenDocsCreator}
+            onCreateSheetFile={handleOpenSheetCreator}
+            disabled={explorerMode === "links" || explorerMode === "shared" || explorerMode === "archive"}
+          />
+
+          <ProjectPickerModal
+            isOpen={showProjectPicker}
+            onClose={() => setShowProjectPicker(false)}
+            projects={projects}
+            currentUserId={session?.user?.id || ""}
+            onSelectProject={selectProject}
+          />
+        </>
       )}
 
       {/* TOAST OVERLAY */}
