@@ -21,6 +21,53 @@ interface MobileSidebarProps {
   setParams: (params: Record<string, string | null | undefined>) => void;
 }
 
+interface MobileStorageCardProps {
+  storageStats: any;
+  onOpenAnalytics: () => void;
+}
+
+function MobileStorageCard({ storageStats, onOpenAnalytics }: MobileStorageCardProps) {
+  const storageUsedGb = (storageStats.used / (1024 * 1024 * 1024)).toFixed(1);
+  const storageLimitGb = (storageStats.limit / (1024 * 1024 * 1024)).toFixed(0);
+  const storagePercentage = Math.min(100, (storageStats.used / storageStats.limit) * 100);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpenAnalytics}
+      className="mobile-storage-card"
+      aria-label={`View storage analytics. ${storageUsedGb} GB used of ${storageLimitGb} GB.`}
+    >
+      <div className="mobile-storage-card-top">
+        <div className="mobile-storage-title-wrap">
+          <span className="mobile-storage-icon">
+            <HardDrive size={15} />
+          </span>
+          <span className="mobile-storage-title">Storage</span>
+        </div>
+        <span className="mobile-storage-percent">{storagePercentage.toFixed(0)}%</span>
+      </div>
+
+      <div className="mobile-storage-copy">
+        <span>{storageUsedGb} GB used</span>
+        <span>of {storageLimitGb} GB</span>
+      </div>
+
+      <div className="mobile-storage-track" aria-hidden="true">
+        <div
+          className="mobile-storage-fill"
+          style={{ width: `${storagePercentage}%` }}
+        />
+      </div>
+
+      <div className="mobile-storage-footer">
+        <span>View details</span>
+        <span aria-hidden="true">-&gt;</span>
+      </div>
+    </button>
+  );
+}
+
 export function MobileSidebar({
   session,
   isOpen,
@@ -32,10 +79,6 @@ export function MobileSidebar({
   handleSignOut,
   setParams
 }: MobileSidebarProps) {
-  const storageUsedGb = (storageStats?.used / (1024 * 1024 * 1024)).toFixed(1);
-  const storageLimitGb = (storageStats?.limit / (1024 * 1024 * 1024)).toFixed(0);
-  const storagePercentage = Math.min(100, (storageStats?.used / storageStats?.limit) * 100);
-
   return (
     <>
       {isOpen && (
@@ -77,42 +120,13 @@ export function MobileSidebar({
         </nav>
 
         {storageStats && (
-          <button
-            type="button"
-            onClick={() => {
+          <MobileStorageCard
+            storageStats={storageStats}
+            onOpenAnalytics={() => {
               setShowDetailedUsageModal(true);
               onClose();
             }}
-            className="mobile-storage-card"
-            aria-label={`View storage analytics. ${storageUsedGb} GB used of ${storageLimitGb} GB.`}
-          >
-            <div className="mobile-storage-card-top">
-              <div className="mobile-storage-title-wrap">
-                <span className="mobile-storage-icon">
-                  <HardDrive size={15} />
-                </span>
-                <span className="mobile-storage-title">Storage</span>
-              </div>
-              <span className="mobile-storage-percent">{storagePercentage.toFixed(0)}%</span>
-            </div>
-
-            <div className="mobile-storage-copy">
-              <span>{storageUsedGb} GB used</span>
-              <span>of {storageLimitGb} GB</span>
-            </div>
-
-            <div className="mobile-storage-track" aria-hidden="true">
-              <div
-                className="mobile-storage-fill"
-                style={{ width: `${storagePercentage}%` }}
-              />
-            </div>
-
-            <div className="mobile-storage-footer">
-              <span>View details</span>
-              <span aria-hidden="true">→</span>
-            </div>
-          </button>
+          />
         )}
 
         <div className="sidebar-user">

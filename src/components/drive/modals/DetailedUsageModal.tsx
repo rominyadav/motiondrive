@@ -8,6 +8,224 @@ interface DetailedUsageModalProps {
   detailedUsageStats: any;
 }
 
+interface UsageStatCardProps {
+  label: string;
+  value: React.ReactNode;
+  unit: string;
+}
+
+interface ProjectBreakdownProps {
+  projectBreakdown: any[];
+  limit: number;
+}
+
+const BYTES_PER_GIB = 1024 * 1024 * 1024;
+
+function formatGib(bytes: number, digits: number) {
+  return (bytes / BYTES_PER_GIB).toFixed(digits);
+}
+
+function getProjectUsage(project: any, limit: number) {
+  const pct = Math.min(100, Math.max(0, (project.sizeUsed / limit) * 100));
+  const sizeReadable = project.sizeUsed > 0
+    ? formatGib(project.sizeUsed, 2) + " GiB"
+    : "0.00 GiB";
+
+  return { pct, sizeReadable };
+}
+
+function UsageSheetHeader({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="usage-sheet-header">
+      <div className="usage-sheet-title-group">
+        <span className="usage-sheet-icon">
+          <HardDrive size={18} />
+        </span>
+        <div>
+          <h3 id="storage-analytics-title">Storage Analytics</h3>
+          <p>Your workspace storage overview</p>
+        </div>
+      </div>
+      <button onClick={onClose} className="usage-sheet-close" aria-label="Close storage analytics">
+        <X size={18} />
+      </button>
+    </div>
+  );
+}
+
+function UsageLoadingState() {
+  return (
+    <div className="usage-loading-state">
+      <div className="usage-loading-spinner" />
+      <p>Calculating storage statistics and project breakdown...</p>
+    </div>
+  );
+}
+
+function UsageStatCard({ label, value, unit }: UsageStatCardProps) {
+  return (
+    <div className="usage-stat-card">
+      <span className="usage-stat-label">{label}</span>
+      <div className="usage-stat-value">
+        <span>{value}</span>
+        <small>{unit}</small>
+      </div>
+    </div>
+  );
+}
+
+function UsageStatsGrid({ detailedUsageStats }: { detailedUsageStats: any }) {
+  return (
+    <div className="usage-stat-grid">
+      <UsageStatCard
+        label="Storage Space"
+        value={formatGib(detailedUsageStats.used, 1)}
+        unit="GiB"
+      />
+      <UsageStatCard
+        label="Total Files"
+        value={detailedUsageStats.totalFiles}
+        unit="Files"
+      />
+      <UsageStatCard
+        label="Folders"
+        value={detailedUsageStats.totalFolders}
+        unit="Dirs"
+      />
+      <UsageStatCard
+        label="My Projects"
+        value={detailedUsageStats.totalProjects}
+        unit="Projs"
+      />
+    </div>
+  );
+}
+
+function UsageEmptyState() {
+  return (
+    <div className="usage-empty-state">
+      <p>No project storage yet.</p>
+      <span>Projects with completed uploads will appear here.</span>
+    </div>
+  );
+}
+
+function MobileProjectCard({ project, limit }: { project: any; limit: number }) {
+  const { pct, sizeReadable } = getProjectUsage(project, limit);
+
+  return (
+    <article className="usage-project-card">
+      <div className="usage-project-main">
+        <div>
+          <h5>{project.name}</h5>
+          <p>{project.clientName || "No client"}</p>
+        </div>
+        <span>{sizeReadable}</span>
+      </div>
+
+      <div className="usage-project-meta">
+        <span>{project.filesCount} files</span>
+        <span>{pct.toFixed(1)}% of workspace</span>
+      </div>
+
+      <div className="usage-project-track" aria-hidden="true">
+        <div style={{ width: `${pct}%` }} />
+      </div>
+    </article>
+  );
+}
+
+function MobileProjectList({ projectBreakdown, limit }: ProjectBreakdownProps) {
+  return (
+    <div className="usage-mobile-project-list">
+      {projectBreakdown.map((project: any) => (
+        <MobileProjectCard key={project.id} project={project} limit={limit} />
+      ))}
+    </div>
+  );
+}
+
+function DesktopProjectTable({ projectBreakdown, limit }: ProjectBreakdownProps) {
+  return (
+    <div className="usage-desktop-table scrollable-table-container">
+      <table className="modern-table">
+        <thead>
+          <tr>
+            <th>Project Name</th>
+            <th>Client</th>
+            <th style={{ textAlign: "center" }}>Files Count</th>
+            <th>Storage Occupied</th>
+            <th>Workspace Ratio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {projectBreakdown.map((project: any) => {
+            const { pct, sizeReadable } = getProjectUsage(project, limit);
+
+            return (
+              <tr key={project.id}>
+                <td>
+                  <span style={{ fontWeight: "600", color: "#e4e4e7" }}>{project.name}</span>
+                </td>
+                <td>
+                  <span style={{ color: "var(--text-secondary)" }}>{project.clientName || "No client"}</span>
+                </td>
+                <td style={{ textAlign: "center", color: "#a1a1aa" }}>
+                  {project.filesCount}
+                </td>
+                <td style={{ color: "#c7d2fe", fontWeight: "600" }}>
+                  {sizeReadable}
+                </td>
+                <td>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{
+                      flex: 1,
+                      height: "5px",
+                      background: "rgba(255, 255, 255, 0.08)",
+                      borderRadius: "3px",
+                      overflow: "hidden"
+                    }}>
+                      <div style={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        background: "#6366f1",
+                        borderRadius: "3px"
+                      }} />
+                    </div>
+                    <span style={{ fontSize: "11px", color: "var(--text-muted)", width: "35px", textAlign: "right" }}>
+                      {pct.toFixed(1)}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProjectBreakdown({ projectBreakdown, limit }: ProjectBreakdownProps) {
+  return (
+    <section className="usage-breakdown-section">
+      <div className="usage-section-heading">
+        <Activity size={15} />
+        <h4>Project Breakdown</h4>
+      </div>
+
+      {projectBreakdown.length === 0 ? (
+        <UsageEmptyState />
+      ) : (
+        <>
+          <MobileProjectList projectBreakdown={projectBreakdown} limit={limit} />
+          <DesktopProjectTable projectBreakdown={projectBreakdown} limit={limit} />
+        </>
+      )}
+    </section>
+  );
+}
+
 export function DetailedUsageModal({
   isOpen,
   onClose,
@@ -20,168 +238,17 @@ export function DetailedUsageModal({
     <div className="usage-analytics-overlay" style={{ zIndex: 1000 }}>
       <div className="usage-analytics-sheet" role="dialog" aria-modal="true" aria-labelledby="storage-analytics-title">
         <div className="usage-sheet-handle" aria-hidden="true" />
-
-        <div className="usage-sheet-header">
-          <div className="usage-sheet-title-group">
-            <span className="usage-sheet-icon">
-              <HardDrive size={18} />
-            </span>
-            <div>
-              <h3 id="storage-analytics-title">Storage Analytics</h3>
-              <p>Your workspace storage overview</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="usage-sheet-close" aria-label="Close storage analytics">
-            <X size={18} />
-          </button>
-        </div>
+        <UsageSheetHeader onClose={onClose} />
 
         {detailedUsageLoading || !detailedUsageStats ? (
-          <div className="usage-loading-state">
-            <div className="usage-loading-spinner" />
-            <p>Calculating storage statistics and project breakdown...</p>
-          </div>
+          <UsageLoadingState />
         ) : (
           <div className="usage-sheet-content">
-            <div className="usage-stat-grid">
-              <div className="usage-stat-card">
-                <span className="usage-stat-label">Storage Space</span>
-                <div className="usage-stat-value">
-                  <span>{(detailedUsageStats.used / (1024 * 1024 * 1024)).toFixed(1)}</span>
-                  <small>GiB</small>
-                </div>
-              </div>
-
-              <div className="usage-stat-card">
-                <span className="usage-stat-label">Total Files</span>
-                <div className="usage-stat-value">
-                  <span>{detailedUsageStats.totalFiles}</span>
-                  <small>Files</small>
-                </div>
-              </div>
-
-              <div className="usage-stat-card">
-                <span className="usage-stat-label">Folders</span>
-                <div className="usage-stat-value">
-                  <span>{detailedUsageStats.totalFolders}</span>
-                  <small>Dirs</small>
-                </div>
-              </div>
-
-              <div className="usage-stat-card">
-                <span className="usage-stat-label">My Projects</span>
-                <div className="usage-stat-value">
-                  <span>{detailedUsageStats.totalProjects}</span>
-                  <small>Projs</small>
-                </div>
-              </div>
-            </div>
-
-            <section className="usage-breakdown-section">
-              <div className="usage-section-heading">
-                <Activity size={15} />
-                <h4>Project Breakdown</h4>
-              </div>
-
-              {detailedUsageStats.projectBreakdown.length === 0 ? (
-                <div className="usage-empty-state">
-                  <p>No project storage yet.</p>
-                  <span>Projects with completed uploads will appear here.</span>
-                </div>
-              ) : (
-                <>
-                  <div className="usage-mobile-project-list">
-                    {detailedUsageStats.projectBreakdown.map((proj: any) => {
-                      const pct = Math.min(100, Math.max(0, (proj.sizeUsed / detailedUsageStats.limit) * 100));
-                      const sizeReadable = proj.sizeUsed > 0
-                        ? (proj.sizeUsed / (1024 * 1024 * 1024)).toFixed(2) + " GiB"
-                        : "0.00 GiB";
-
-                      return (
-                        <article className="usage-project-card" key={proj.id}>
-                          <div className="usage-project-main">
-                            <div>
-                              <h5>{proj.name}</h5>
-                              <p>{proj.clientName || "No client"}</p>
-                            </div>
-                            <span>{sizeReadable}</span>
-                          </div>
-
-                          <div className="usage-project-meta">
-                            <span>{proj.filesCount} files</span>
-                            <span>{pct.toFixed(1)}% of workspace</span>
-                          </div>
-
-                          <div className="usage-project-track" aria-hidden="true">
-                            <div style={{ width: `${pct}%` }} />
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-
-                  <div className="usage-desktop-table scrollable-table-container">
-                    <table className="modern-table">
-                      <thead>
-                        <tr>
-                          <th>Project Name</th>
-                          <th>Client</th>
-                          <th style={{ textAlign: "center" }}>Files Count</th>
-                          <th>Storage Occupied</th>
-                          <th>Workspace Ratio</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detailedUsageStats.projectBreakdown.map((proj: any) => {
-                          const pct = Math.min(100, Math.max(0, (proj.sizeUsed / detailedUsageStats.limit) * 100));
-                          const sizeReadable = proj.sizeUsed > 0
-                            ? (proj.sizeUsed / (1024 * 1024 * 1024)).toFixed(2) + " GiB"
-                            : "0.00 GiB";
-
-                          return (
-                            <tr key={proj.id}>
-                              <td>
-                                <span style={{ fontWeight: "600", color: "#e4e4e7" }}>{proj.name}</span>
-                              </td>
-                              <td>
-                                <span style={{ color: "var(--text-secondary)" }}>{proj.clientName || "No client"}</span>
-                              </td>
-                              <td style={{ textAlign: "center", color: "#a1a1aa" }}>
-                                {proj.filesCount}
-                              </td>
-                              <td style={{ color: "#c7d2fe", fontWeight: "600" }}>
-                                {sizeReadable}
-                              </td>
-                              <td>
-                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <div style={{
-                                    flex: 1,
-                                    height: "5px",
-                                    background: "rgba(255, 255, 255, 0.08)",
-                                    borderRadius: "3px",
-                                    overflow: "hidden"
-                                  }}>
-                                    <div style={{
-                                      width: `${pct}%`,
-                                      height: "100%",
-                                      background: "#6366f1",
-                                      borderRadius: "3px"
-                                    }} />
-                                  </div>
-                                  <span style={{ fontSize: "11px", color: "var(--text-muted)", width: "35px", textAlign: "right" }}>
-                                    {pct.toFixed(1)}%
-                                  </span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </section>
+            <UsageStatsGrid detailedUsageStats={detailedUsageStats} />
+            <ProjectBreakdown
+              projectBreakdown={detailedUsageStats.projectBreakdown}
+              limit={detailedUsageStats.limit}
+            />
           </div>
         )}
       </div>
