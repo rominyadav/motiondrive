@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ProgressNotificationPlugin.class);
         registerPlugin(NativeUploadPlugin.class);
         registerPlugin(NativeDownloadPlugin.class);
+        registerPlugin(NativeGoogleAuthPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
