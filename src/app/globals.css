@@ -62,16 +62,20 @@
 }
 
 html, body {
-  width: 100vw;
-  height: 100vh;
-  max-width: 100vw;
-  max-height: 100vh;
+  width: 100%;
+  min-height: 100dvh;
+  height: 100%;
+  max-width: 100%;
   overflow: hidden;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-width: 0;
 }
 
 button, input, select, textarea {
