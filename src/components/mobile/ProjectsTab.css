@@ -97,8 +97,12 @@
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 16px;
-  overflow: hidden;
+  overflow: visible;
   transition: all 0.2s;
+}
+
+.mobile-project-card.is-menu-open {
+  z-index: 20;
 }
 
 .mobile-project-card:active {
@@ -177,6 +181,12 @@
 
 .mobile-project-menu-btn:active {
   background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+
+.mobile-project-menu-btn[aria-expanded="true"] {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(129, 140, 248, 0.35);
   color: #ffffff;
 }
 
@@ -335,7 +345,7 @@
   margin-bottom: 20px;
 }
 
-.mobile-form-group label {
+.mobile-form-group > label {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
@@ -364,26 +374,41 @@
 /* Radio Group */
 .mobile-radio-group {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .mobile-radio-label {
-  flex: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.02);
+  gap: 12px;
+  min-height: 50px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s;
+  user-select: none;
+}
+
+.mobile-radio-label:hover {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.mobile-radio-label.is-selected {
+  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(129, 140, 248, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.12);
 }
 
 .mobile-radio-label input[type="radio"] {
   width: 18px;
   height: 18px;
   margin: 0;
+  flex-shrink: 0;
+  accent-color: #818cf8;
 }
 
 .mobile-radio-label input[type="radio"]:checked + span {
@@ -393,14 +418,15 @@
 
 .mobile-radio-label span {
   color: #e4e4e7;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
 /* User Select */
 .mobile-user-select {
-  max-height: 200px;
+  max-height: 232px;
   overflow-y: auto;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(255, 255, 255, 0.025);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   padding: 8px;
@@ -410,24 +436,66 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
-  border-radius: 8px;
+  min-height: 56px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s;
+  user-select: none;
 }
 
 .mobile-user-checkbox:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.mobile-user-checkbox.is-selected {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(129, 140, 248, 0.32);
 }
 
 .mobile-user-checkbox input[type="checkbox"] {
   width: 18px;
   height: 18px;
   margin: 0;
+  flex-shrink: 0;
+  accent-color: #818cf8;
 }
 
-.mobile-user-checkbox span {
+.mobile-share-user-avatar {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.28) 0%, rgba(59, 130, 246, 0.18) 100%);
+  border: 1px solid rgba(129, 140, 248, 0.22);
+  border-radius: 999px;
+  color: #c7d2fe;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.mobile-user-name {
+  flex: 1;
+  min-width: 0;
   color: #e4e4e7;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-user-select-empty {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: #71717a;
   font-size: 0.9rem;
 }
 

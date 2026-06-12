@@ -82,7 +82,7 @@ export function ProjectsTab({
     const isOwner = project.userId === currentUserId;
     
     return (
-      <div key={project.id} className="mobile-project-card">
+      <div key={project.id} className={`mobile-project-card ${showMenuForId === project.id ? "is-menu-open" : ""}`}>
         <button
           className="mobile-project-card-main"
           onClick={() => onSelectProject(project.id, project.name)}
@@ -101,7 +101,10 @@ export function ProjectsTab({
         {isOwner && (
           <div className="mobile-project-actions">
             <button
+              type="button"
               className="mobile-project-menu-btn"
+              aria-label={`Open actions for ${project.name}`}
+              aria-expanded={showMenuForId === project.id}
               onClick={(e) => {
                 e.stopPropagation();
                 setShowMenuForId(showMenuForId === project.id ? null : project.id);
@@ -112,13 +115,13 @@ export function ProjectsTab({
             
             {showMenuForId === project.id && (
               <div className="mobile-project-menu">
-                <button onClick={() => handleMenuClick(project, "edit")}>
+                <button type="button" onClick={() => handleMenuClick(project, "edit")}>
                   <Edit size={16} /> Edit
                 </button>
-                <button onClick={() => handleMenuClick(project, "share")}>
+                <button type="button" onClick={() => handleMenuClick(project, "share")}>
                   <Share2 size={16} /> Share
                 </button>
-                <button onClick={() => handleMenuClick(project, "delete")} className="danger">
+                <button type="button" onClick={() => handleMenuClick(project, "delete")} className="danger">
                   <Trash2 size={16} /> Delete
                 </button>
               </div>
@@ -263,6 +266,7 @@ function ProjectFormModal({
       : []
   );
   const [loading, setLoading] = useState(false);
+  const selectableUsers = users.filter(u => u.id !== currentUserId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -310,17 +314,19 @@ function ProjectFormModal({
           <div className="mobile-form-group">
             <label>Share With</label>
             <div className="mobile-radio-group">
-              <label className="mobile-radio-label">
+              <label className={`mobile-radio-label ${shareType === "all" ? "is-selected" : ""}`}>
                 <input
                   type="radio"
+                  name="project-share-type"
                   checked={shareType === "all"}
                   onChange={() => setShareType("all")}
                 />
                 <span>Everyone</span>
               </label>
-              <label className="mobile-radio-label">
+              <label className={`mobile-radio-label ${shareType === "specific" ? "is-selected" : ""}`}>
                 <input
                   type="radio"
+                  name="project-share-type"
                   checked={shareType === "specific"}
                   onChange={() => setShareType("specific")}
                 />
@@ -333,24 +339,34 @@ function ProjectFormModal({
             <div className="mobile-form-group">
               <label>Select Users</label>
               <div className="mobile-user-select">
-                {users
-                  .filter(u => u.id !== currentUserId)
-                  .map(user => (
-                    <label key={user.id} className="mobile-user-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUsers([...selectedUsers, user.id]);
-                          } else {
-                            setSelectedUsers(selectedUsers.filter(id => id !== user.id));
-                          }
-                        }}
-                      />
-                      <span>{user.name}</span>
-                    </label>
-                  ))}
+                {selectableUsers.length > 0 ? (
+                  selectableUsers.map(user => {
+                    const isSelected = selectedUsers.includes(user.id);
+                    const displayName = user.name || user.email;
+
+                    return (
+                      <label key={user.id} className={`mobile-user-checkbox ${isSelected ? "is-selected" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedUsers([...selectedUsers, user.id]);
+                            } else {
+                              setSelectedUsers(selectedUsers.filter(id => id !== user.id));
+                            }
+                          }}
+                        />
+                        <span className="mobile-share-user-avatar" aria-hidden="true">
+                          {displayName.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="mobile-user-name">{displayName}</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <div className="mobile-user-select-empty">No other users available</div>
+                )}
               </div>
             </div>
           )}
@@ -392,6 +408,7 @@ function ShareProjectModal({
       : []
   );
   const [loading, setLoading] = useState(false);
+  const selectableUsers = users.filter(u => u.id !== currentUserId);
 
   const handleSave = async () => {
     setLoading(true);
@@ -425,17 +442,19 @@ function ShareProjectModal({
           <div className="mobile-form-group">
             <label>Share With</label>
             <div className="mobile-radio-group">
-              <label className="mobile-radio-label">
+              <label className={`mobile-radio-label ${shareType === "all" ? "is-selected" : ""}`}>
                 <input
                   type="radio"
+                  name="share-project-type"
                   checked={shareType === "all"}
                   onChange={() => setShareType("all")}
                 />
                 <span>Everyone</span>
               </label>
-              <label className="mobile-radio-label">
+              <label className={`mobile-radio-label ${shareType === "specific" ? "is-selected" : ""}`}>
                 <input
                   type="radio"
+                  name="share-project-type"
                   checked={shareType === "specific"}
                   onChange={() => setShareType("specific")}
                 />
@@ -448,24 +467,34 @@ function ShareProjectModal({
             <div className="mobile-form-group">
               <label>Select Users</label>
               <div className="mobile-user-select">
-                {users
-                  .filter(u => u.id !== currentUserId)
-                  .map(user => (
-                    <label key={user.id} className="mobile-user-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedUsers([...selectedUsers, user.id]);
-                          } else {
-                            setSelectedUsers(selectedUsers.filter(id => id !== user.id));
-                          }
-                        }}
-                      />
-                      <span>{user.name}</span>
-                    </label>
-                  ))}
+                {selectableUsers.length > 0 ? (
+                  selectableUsers.map(user => {
+                    const isSelected = selectedUsers.includes(user.id);
+                    const displayName = user.name || user.email;
+
+                    return (
+                      <label key={user.id} className={`mobile-user-checkbox ${isSelected ? "is-selected" : ""}`}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedUsers([...selectedUsers, user.id]);
+                            } else {
+                              setSelectedUsers(selectedUsers.filter(id => id !== user.id));
+                            }
+                          }}
+                        />
+                        <span className="mobile-share-user-avatar" aria-hidden="true">
+                          {displayName.charAt(0).toUpperCase()}
+                        </span>
+                        <span className="mobile-user-name">{displayName}</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <div className="mobile-user-select-empty">No other users available</div>
+                )}
               </div>
             </div>
           )}
