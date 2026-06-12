@@ -7,6 +7,9 @@ import { authClient } from "@/lib/auth-client";
 import { 
   listProjects, 
   listApprovedUsers,
+  createProject,
+  renameProject,
+  deleteProject,
   listDriveContents, 
   listSharedDriveContents,
   listArchiveDriveContents,
@@ -37,7 +40,8 @@ import { DriveExplorer } from "@/components/drive/DriveExplorer";
 import { TransferDrawer } from "@/components/drive/TransferDrawer";
 
 // Mobile components
-import { BottomTabBar, MobileHeader, FloatingActionButton, ProjectPickerModal, MobileSidebar } from "@/components/mobile";
+import { BottomTabBar, MobileHeader, FloatingActionButton, ProjectPickerModal, MobileSidebar, ProjectsTab } from "@/components/mobile";
+import "@/components/mobile/ProjectsTab.css";
 import { useMobileTabs } from "@/hooks/mobile/useMobileTabs";
 import { useCapacitorClass } from "@/hooks/mobile/useCapacitorClass";
 import { isCapacitorApp } from "@/lib/platform";
@@ -390,6 +394,7 @@ function DrivePageContent() {
 
   // Mobile Sidebar & Collapsibility State
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showMobileProjectsTab, setShowMobileProjectsTab] = useState(false);
 
   // Add capacitor-app class to body when running in Capacitor
   useCapacitorClass();
@@ -414,6 +419,14 @@ function DrivePageContent() {
     selectArchiveDrive,
     setParams
   });
+
+  // Override project picker behavior to show Projects tab instead
+  useEffect(() => {
+    if (showProjectPicker) {
+      setShowMobileProjectsTab(true);
+      setShowProjectPicker(false);
+    }
+  }, [showProjectPicker, setShowProjectPicker]);
 
   // Project Section Collapsible & Show More States
   const [yourProjsExpanded, setYourProjsExpanded] = useState(true);
@@ -640,6 +653,45 @@ function DrivePageContent() {
     if (explorerMode === "archive") return "Archive";
     if (explorerMode === "links") return "Shared Links";
     return "Drive";
+  };
+
+  // Mobile Project Management Handlers
+  const handleMobileCreateProject = async (name: string, clientName: string, sharedWith: string) => {
+    try {
+      await createProject(name, clientName, sharedWith);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      showToast("Project created successfully", "success");
+    } catch (error) {
+      showToast("Failed to create project", "error");
+      throw error;
+    }
+  };
+
+  const handleMobileEditProject = async (id: string, name: string, clientName: string, sharedWith: string) => {
+    try {
+      await renameProject(id, name, clientName, sharedWith);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      showToast("Project updated successfully", "success");
+    } catch (error) {
+      showToast("Failed to update project", "error");
+      throw error;
+    }
+  };
+
+  const handleMobileDeleteProject = async (id: string) => {
+    try {
+      await deleteProject(id);
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      showToast("Project deleted successfully", "success");
+    } catch (error) {
+      showToast("Failed to delete project", "error");
+      throw error;
+    }
+  };
+
+  const handleMobileSelectProject = (projectId: string, projectName: string) => {
+    selectProject(projectId, projectName);
+    setShowMobileProjectsTab(false);
   };
 
   return (
@@ -1079,47 +1131,53 @@ function DrivePageContent() {
       {/* MOBILE UI COMPONENTS - ONLY FOR CAPACITOR APP */}
       {isMobileApp && (
         <>
-          <MobileHeader 
-            onMenuOpen={() => setSidebarOpen(true)}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            title={getMobileTitle()}
-            userInitial={session?.user?.name?.charAt(0) || "U"}
-          />
+          {!showMobileProjectsTab ? (
+            <>
+              <MobileHeader 
+                onMenuOpen={() => setSidebarOpen(true)}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                title={getMobileTitle()}
+                userInitial={session?.user?.name?.charAt(0) || "U"}
+              />
 
-          <MobileSidebar
-            session={session}
-            isOpen={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-            explorerMode={explorerMode}
-            isAdmin={isAdmin}
-            storageStats={storageStats}
-            setShowDetailedUsageModal={setShowDetailedUsageModal}
-            handleSignOut={handleSignOut}
-            setParams={setParams}
-          />
+              <MobileSidebar
+                session={session}
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
+                explorerMode={explorerMode}
+                isAdmin={isAdmin}
+                storageStats={storageStats}
+                setShowDetailedUsageModal={setShowDetailedUsageModal}
+                handleSignOut={handleSignOut}
+                setParams={setParams}
+              />
+
+              <FloatingActionButton
+                onUploadFile={triggerFileSelect}
+                onUploadFolder={triggerFolderSelect}
+                onCreateFolder={() => setFolderModalOpen(true)}
+                onCreateTextFile={handleOpenTextCreator}
+                onCreateDocsFile={handleOpenDocsCreator}
+                onCreateSheetFile={handleOpenSheetCreator}
+                disabled={explorerMode === "links" || explorerMode === "shared" || explorerMode === "archive"}
+              />
+            </>
+          ) : (
+            <ProjectsTab
+              projects={projects}
+              currentUserId={session?.user?.id || ""}
+              users={approvedUsers}
+              onCreateProject={handleMobileCreateProject}
+              onEditProject={handleMobileEditProject}
+              onDeleteProject={handleMobileDeleteProject}
+              onSelectProject={handleMobileSelectProject}
+            />
+          )}
 
           <BottomTabBar 
             activeTab={activeTab} 
             onTabChange={handleTabChange} 
-          />
-
-          <FloatingActionButton
-            onUploadFile={triggerFileSelect}
-            onUploadFolder={triggerFolderSelect}
-            onCreateFolder={() => setFolderModalOpen(true)}
-            onCreateTextFile={handleOpenTextCreator}
-            onCreateDocsFile={handleOpenDocsCreator}
-            onCreateSheetFile={handleOpenSheetCreator}
-            disabled={explorerMode === "links" || explorerMode === "shared" || explorerMode === "archive"}
-          />
-
-          <ProjectPickerModal
-            isOpen={showProjectPicker}
-            onClose={() => setShowProjectPicker(false)}
-            projects={projects}
-            currentUserId={session?.user?.id || ""}
-            onSelectProject={selectProject}
           />
         </>
       )}

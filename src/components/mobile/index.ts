@@ -3,3 +3,4 @@ export { MobileHeader } from "./MobileHeader";
 export { FloatingActionButton } from "./FloatingActionButton";
 export { ProjectPickerModal } from "./ProjectPickerModal";
 export { MobileSidebar } from "./MobileSidebar";
+export { ProjectsTab } from "./ProjectsTab";
